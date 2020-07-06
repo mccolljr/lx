@@ -16,36 +16,18 @@ fn main() {
     let vm = VM::new(
         compile(
             "
-            let fib = (fn () {
-                let cache = {'0': 0, '1': 1};
-                let _fib = fn(n) {
-                    if n < 0 {
-                        throw 'n cannot be negative';
-                    }
-                    if n % 1 != 0 {
-                        throw 'n must be an integer';
-                    }
-                    let result = cache[n];
-                    if result == null {
-                        result = _fib(n-2) + _fib(n-1);
-                        cache[n] = result;
-                    }
-                    return result;
-                };
-                return _fib;
-            }());
-            print('fib(90):', fib(90));
-            print('fib(45):', fib(45));
-            print('abs(-1):', abs(-1));
+            let a = 1 + 2 + 3 + 4 + 5 + 6 + 7;
+            let b = 'a' + 'b';
+            print(a, b);
             ",
         )
-        .unwrap(),
+        .expect("compilation error"),
     )
     .with_global(
         "print",
         Value::NativeFunc {
             name: "print".into(),
-            f: |args| {
+            fnptr: |args| {
                 for (i, v) in args.iter().enumerate() {
                     if i > 0 {
                         print!(" ");
@@ -61,9 +43,9 @@ fn main() {
         "abs",
         Value::NativeFunc {
             name: "abs".into(),
-            f: |args| {
+            fnptr: |args| {
                 if args.len() != 1 {
-                    return Err(Error::RuntimeError(format!(
+                    return Err(Error::ArgumentError(format!(
                         "wrong number of arguments: expected 1, got {}",
                         args.len()
                     )));
@@ -78,7 +60,7 @@ fn main() {
     );
     let result = vm.run();
     match result {
-        Ok(_) => println!("OK!"),
+        Ok(_) => println!("OK! {:?}", vm),
         Err(e) => println!("ERROR! {:?}\n\n{:?}", e, vm),
     }
 }

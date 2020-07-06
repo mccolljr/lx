@@ -1,13 +1,60 @@
 use super::errors::Error;
 use super::lexer::Lexer;
-use super::source::Code;
+use super::source::{Code, Pos};
 use super::token::{Token, TokenType};
 use crate::ast::{ElseBlock, Expr, FnArg, IfBlock, Node, ObjField, Stmt};
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
+
+struct ParseScope {
+    parent: Option<Rc<ParseScope>>,
+    decls: RefCell<HashMap<String, Pos>>,
+}
+
+impl ParseScope {
+    fn global() -> Rc<Self> {
+        let s = ParseScope::create(None);
+        s.declare("print".into(), Pos::mark(0)).unwrap();
+        s.declare("abs".into(), Pos::mark(0)).unwrap();
+        s
+    }
+
+    fn create(parent: Option<Rc<ParseScope>>) -> Rc<Self> {
+        Rc::from(ParseScope {
+            parent,
+            decls: RefCell::new(HashMap::new()),
+        })
+    }
+
+    fn get_local_decl(&self, name: &String) -> Option<Pos> {
+        self.decls.borrow().get(name).map(|pos| *pos)
+    }
+
+    fn get_decl(&self, name: &String) -> Option<Pos> {
+        if let Some(decl_pos) = self.get_local_decl(name) {
+            return Some(decl_pos);
+        } else if let Some(ref parent) = self.parent {
+            parent.get_decl(name)
+        } else {
+            None
+        }
+    }
+
+    fn declare(&self, name: String, at: Pos) -> Result<(), Error> {
+        if let Some(original) = self.get_local_decl(&name) {
+            return Err(Error::Redeclaration { at, original, name });
+        }
+        self.decls.borrow_mut().insert(name, at);
+        Ok(())
+    }
+}
 
 pub struct Parser {
     lex: Lexer,
     cur_t: Token,
     peek_t: Token,
+    scope: Rc<ParseScope>,
 }
 
 impl Parser {
@@ -16,6 +63,7 @@ impl Parser {
             lex: Lexer::new(src),
             cur_t: Token::new_meta(0, TokenType::EOF),
             peek_t: Token::new_meta(0, TokenType::EOF),
+            scope: ParseScope::create(Some(ParseScope::global())),
         };
         p.advance().expect("fatal error");
         p
@@ -32,6 +80,7 @@ impl Parser {
     fn parse_stmt(&mut self) -> Result<Stmt, Error> {
         match self.peek_t.typ {
             TokenType::KwLet => self.parse_let_stmt(),
+            TokenType::KwFn => self.parse_fndef_stmt(),
             TokenType::KwIf => self.parse_if_stmt(),
             TokenType::KwReturn => self.parse_return_stmt(),
             TokenType::KwThrow => self.parse_throw_stmt(),
@@ -44,6 +93,7 @@ impl Parser {
         let kwlet = self.cur_t.pos;
         let ident = self.expect(TokenType::Ident)?;
         let ident_pos = ident.pos;
+        self.scope.declare(ident.lit.clone(), ident_pos)?;
         let ident_name = ident.lit.clone();
         let assign = self.expect(TokenType::Assign)?.pos;
         let expr = Box::new(self.parse_expr(0)?);
@@ -58,22 +108,51 @@ impl Parser {
         })
     }
 
+    fn parse_fndef_stmt(&mut self) -> Result<Stmt, Error> {
+        let kwfn = self.expect(TokenType::KwFn)?.pos;
+        let ident = self.expect(TokenType::Ident)?;
+        let ident_name = ident.lit;
+        let ident_pos = ident.pos;
+        self.scope.declare(ident_name.clone(), ident_pos)?;
+        self.scope = ParseScope::create(Some(self.scope.clone()));
+        let oparen = self.expect(TokenType::OParen)?.pos;
+        let args = self.parse_fnarg_list()?;
+        for arg in args.iter() {
+            self.scope.declare(arg.name.clone(), arg.pos)?;
+        }
+        let cparen = self.expect(TokenType::CParen)?.pos;
+        let obrace = self.expect(TokenType::OBrace)?.pos;
+        let body = self.parse_stmt_list(vec![TokenType::CBrace])?;
+        let cbrace = self.expect(TokenType::CBrace)?.pos;
+        let stmt = Stmt::FnDef {
+            kwfn,
+            ident_pos,
+            ident_name,
+            oparen,
+            args,
+            cparen,
+            obrace,
+            body,
+            cbrace,
+        };
+        self.scope = self.scope.parent.clone().unwrap();
+        Ok(stmt)
+    }
+
     fn parse_if_stmt(&mut self) -> Result<Stmt, Error> {
-        self.expect(TokenType::KwIf)?;
         let mut head = Vec::<IfBlock>::with_capacity(1);
         head.push(IfBlock {
             kw_typ: TokenType::KwIf,
-            kw_pos: self.cur_t.pos,
+            kw_pos: self.expect(TokenType::KwIf)?.pos,
             cond: Box::new(self.parse_expr(0)?),
             obrace: self.expect(TokenType::OBrace)?.pos,
             body: self.parse_stmt_list(vec![TokenType::CBrace])?,
             cbrace: self.expect(TokenType::CBrace)?.pos,
         });
         while self.peek_t.typ == TokenType::KwElif {
-            self.advance()?;
             head.push(IfBlock {
                 kw_typ: TokenType::KwElif,
-                kw_pos: self.cur_t.pos,
+                kw_pos: self.expect(TokenType::KwElif)?.pos,
                 cond: Box::new(self.parse_expr(0)?),
                 obrace: self.expect(TokenType::OBrace)?.pos,
                 body: self.parse_stmt_list(vec![TokenType::CBrace])?,
@@ -83,9 +162,8 @@ impl Parser {
         Ok(Stmt::If {
             head,
             tail: if self.peek_t.typ == TokenType::KwElse {
-                self.advance()?;
                 Some(ElseBlock {
-                    kwelse: self.cur_t.pos,
+                    kwelse: self.expect(TokenType::KwElse)?.pos,
                     obrace: self.expect(TokenType::OBrace)?.pos,
                     body: self.parse_stmt_list(vec![TokenType::CBrace])?,
                     cbrace: self.expect(TokenType::CBrace)?.pos,
@@ -97,18 +175,18 @@ impl Parser {
     }
 
     fn parse_return_stmt(&mut self) -> Result<Stmt, Error> {
-        let kw_return = self.expect(TokenType::KwReturn)?.pos;
+        let kwreturn = self.expect(TokenType::KwReturn)?.pos;
         Ok(Stmt::Return {
-            kw_return,
+            kwreturn,
             expr: Box::new(self.parse_expr(0)?),
             semi: self.expect(TokenType::Semi)?.pos,
         })
     }
 
     fn parse_throw_stmt(&mut self) -> Result<Stmt, Error> {
-        let kw_throw = self.expect(TokenType::KwThrow)?.pos;
+        let kwthrow = self.expect(TokenType::KwThrow)?.pos;
         Ok(Stmt::Throw {
-            kw_throw,
+            kwthrow,
             error: Box::new(self.parse_expr(0)?),
             semi: self.expect(TokenType::Semi)?.pos,
         })
@@ -214,19 +292,39 @@ impl Parser {
                 pos: self.cur_t.pos,
                 val: self.cur_t.lit.clone(),
             }),
-            TokenType::KwFn => Ok(Expr::LitFunc {
-                kwfn: self.cur_t.pos,
-                oparen: self.expect(TokenType::OParen)?.pos,
-                args: self.parse_fnarg_list()?,
-                cparen: self.expect(TokenType::CParen)?.pos,
-                obrace: self.expect(TokenType::OBrace)?.pos,
-                body: self.parse_stmt_list(vec![TokenType::CBrace])?,
-                cbrace: self.expect(TokenType::CBrace)?.pos,
-            }),
-            TokenType::Ident => Ok(Expr::Ident {
-                pos: self.cur_t.pos,
-                name: self.cur_t.lit.clone(),
-            }),
+            TokenType::KwFn => {
+                self.scope = ParseScope::create(Some(self.scope.clone()));
+                let kwfn = self.cur_t.pos;
+                let oparen = self.expect(TokenType::OParen)?.pos;
+                let args = self.parse_fnarg_list()?;
+                for arg in args.iter() {
+                    self.scope.declare(arg.name.clone(), arg.pos)?;
+                }
+                let cparen = self.expect(TokenType::CParen)?.pos;
+                let obrace = self.expect(TokenType::OBrace)?.pos;
+                let body = self.parse_stmt_list(vec![TokenType::CBrace])?;
+                let cbrace = self.expect(TokenType::CBrace)?.pos;
+                let expr = Expr::LitFunc {
+                    kwfn,
+                    oparen,
+                    args,
+                    cparen,
+                    obrace,
+                    body,
+                    cbrace,
+                };
+                self.scope = self.scope.parent.clone().unwrap();
+                Ok(expr)
+            }
+            TokenType::Ident => {
+                let pos = self.cur_t.pos;
+                let name = self.cur_t.lit.clone();
+                if self.scope.get_decl(&name).is_none() {
+                    Err(Error::Undeclared { at: pos, name })
+                } else {
+                    Ok(Expr::Ident { pos, name })
+                }
+            }
             TokenType::OParen => Ok(Expr::Paren {
                 oparen: self.cur_t.pos,
                 expr: Box::new(self.parse_expr(0)?),

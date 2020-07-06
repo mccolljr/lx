@@ -16,13 +16,14 @@ pub enum Value {
     Object(Rc<RefCell<HashMap<String, Value>>>),
     Array(Rc<RefCell<VecDeque<Value>>>),
     Func {
+        name: String,
         argct: usize,
         insts: Rc<[Inst]>,
         outer: Rc<Scope>,
     },
     NativeFunc {
         name: String,
-        f: fn(Vec<Value>) -> Result<Value, Error>,
+        fnptr: fn(Vec<Value>) -> Result<Value, Error>,
     },
 }
 
@@ -36,15 +37,18 @@ impl Debug for Value {
             Self::Bool(v) => f.debug_tuple("Bool").field(v).finish(),
             Self::Object(v) => f.debug_tuple("Object").field(&v.borrow()).finish(),
             Self::Array(v) => f.debug_tuple("Array").field(&v.borrow()).finish(),
-            Self::Func { argct, insts, .. } => f
+            Self::Func {
+                argct, insts, name, ..
+            } => f
                 .debug_struct("Func")
+                .field("name", name)
                 .field("argct", argct)
                 .field("insts", insts)
                 .finish(),
-            Self::NativeFunc { name, f: func } => f
+            Self::NativeFunc { name, fnptr } => f
                 .debug_struct("NativeFunc")
                 .field("name", name)
-                .field("f", func)
+                .field("fnptr", fnptr)
                 .finish(),
         }
     }

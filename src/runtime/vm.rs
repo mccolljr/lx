@@ -44,6 +44,7 @@ impl VM {
         stack.truncate(sp);
     }
 
+    #[inline(always)]
     fn run_frame(&self, insts: Rc<[Inst]>, scope: Rc<Scope>, ret_sp: usize) -> Result<(), Error> {
         let mut ip: usize = 0;
         let mut ret_val = Value::Null;
@@ -67,6 +68,26 @@ impl VM {
                 }
                 Inst::DeclareNamed(ref name) => {
                     scope.declare(name.clone(), self.pop_stack()?);
+                }
+                Inst::DeclareArgs(args) => {
+                    let want_argct = args.len();
+                    if let Value::Int(i_have_argct) = self.pop_stack()? {
+                        if i_have_argct < 0 {
+                            return Err(Error::MalformedStackPanic);
+                        }
+                        let have_argct = i_have_argct as usize;
+                        if have_argct != want_argct {
+                            return Err(Error::ArgumentError(format!(
+                                "wrong number of arguments: expected {}, got {}",
+                                want_argct, have_argct
+                            )));
+                        }
+                        for i in 1..=want_argct {
+                            scope.declare(args[want_argct - i].clone(), self.pop_stack()?);
+                        }
+                    } else {
+                        return Err(Error::MalformedStackPanic);
+                    }
                 }
                 Inst::BinaryOp(typ) => {
                     let rhs = self.pop_stack()?;
@@ -109,8 +130,9 @@ impl VM {
                     ip = new_ip;
                     continue;
                 }
-                Inst::MakeClosure(fn_argct, fn_insts) => {
+                Inst::MakeClosure(fn_argct, fn_insts, name) => {
                     self.push_stack(Value::Func {
+                        name: name.map_or("anonymous".into(), |name| name.clone()),
                         argct: fn_argct,
                         insts: fn_insts.clone(),
                         outer: Rc::new(Scope::extend(Rc::clone(&scope))),
@@ -121,9 +143,12 @@ impl VM {
                 }
                 Inst::AddCallArg => {
                     let arg = self.pop_stack()?;
-                    let argct = self.pop_stack()?;
-                    self.push_stack(arg)?;
-                    self.push_stack(argct.op_add(&Value::Int(1))?)?;
+                    if let Value::Int(argct) = self.pop_stack()? {
+                        self.push_stack(arg)?;
+                        self.push_stack(Value::Int(argct + 1))?;
+                    } else {
+                        return Err(Error::MalformedStackPanic);
+                    };
                 }
                 Inst::FinishCall => {
                     let target = self.pop_stack()?;
@@ -135,7 +160,7 @@ impl VM {
                                 self.get_return_sp()?,
                             )?;
                         }
-                        Value::NativeFunc { f, .. } => {
+                        Value::NativeFunc { fnptr, .. } => {
                             if let Value::Int(argct) = self.pop_stack()? {
                                 if argct < 0 {
                                     return Err(Error::MalformedStackPanic);
@@ -145,7 +170,7 @@ impl VM {
                                     args.push(self.pop_stack()?);
                                 }
                                 args.reverse();
-                                self.push_stack(f(args)?)?;
+                                self.push_stack(fnptr(args)?)?;
                             } else {
                                 return Err(Error::MalformedStackPanic);
                             }

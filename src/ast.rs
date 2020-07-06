@@ -47,6 +47,17 @@ pub enum Stmt {
         expr: Box<Expr>,
         semi: Pos,
     },
+    FnDef {
+        kwfn: Pos,
+        ident_pos: Pos,
+        ident_name: String,
+        oparen: Pos,
+        args: Vec<FnArg>,
+        cparen: Pos,
+        obrace: Pos,
+        body: Vec<Stmt>,
+        cbrace: Pos,
+    },
     Assignment {
         lhs: Box<Expr>,
         assign: Pos,
@@ -62,12 +73,12 @@ pub enum Stmt {
         semi: Pos,
     },
     Return {
-        kw_return: Pos,
+        kwreturn: Pos,
         expr: Box<Expr>,
         semi: Pos,
     },
     Throw {
-        kw_throw: Pos,
+        kwthrow: Pos,
         error: Box<Expr>,
         semi: Pos,
     },
@@ -80,6 +91,25 @@ impl Display for Stmt {
                 ident_name, expr, ..
             } => write!(f, "let {} = {};", ident_name, expr),
             Stmt::Assignment { lhs, rhs, .. } => write!(f, "{} = {};", lhs, rhs),
+            Stmt::FnDef {
+                ident_name,
+                args,
+                body,
+                ..
+            } => {
+                write!(f, "fn {} (", ident_name)?;
+                for (i, arg) in args.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", arg.name)?;
+                }
+                write!(f, ") {{")?;
+                for stmt in body.iter() {
+                    write!(f, "\n\t{}", stmt)?;
+                }
+                write!(f, "\n}}")
+            }
             Stmt::If { head, tail } => {
                 for (i, block) in head.iter().enumerate() {
                     write!(
@@ -119,6 +149,11 @@ impl Node for Stmt {
                 let end = semi.offset + semi.length;
                 Pos::span(start, end - start)
             }
+            Stmt::FnDef { kwfn, cbrace, .. } => {
+                let start = kwfn.offset;
+                let end = cbrace.offset + cbrace.length;
+                Pos::span(start, end - start)
+            }
             Stmt::Assignment { lhs, semi, .. } => {
                 let start = lhs.pos().offset;
                 let end = semi.offset + semi.length;
@@ -142,15 +177,13 @@ impl Node for Stmt {
                 let end = semi.offset + semi.length;
                 Pos::span(start, end - start)
             }
-            Stmt::Return {
-                kw_return, semi, ..
-            } => {
-                let start = kw_return.offset;
+            Stmt::Return { kwreturn, semi, .. } => {
+                let start = kwreturn.offset;
                 let end = semi.offset + semi.length;
                 Pos::span(start, end - start)
             }
-            Stmt::Throw { kw_throw, semi, .. } => {
-                let start = kw_throw.offset;
+            Stmt::Throw { kwthrow, semi, .. } => {
+                let start = kwthrow.offset;
                 let end = semi.offset + semi.length;
                 Pos::span(start, end - start)
             }
@@ -386,6 +419,43 @@ impl Expr {
             Expr::Ident { .. } => true,
             Expr::Index { .. } => true,
             _ => false,
+        }
+    }
+
+    pub fn is_const_lit(&self) -> bool {
+        match self {
+            Expr::LitNull { .. } => true,
+            Expr::LitInt { .. } => true,
+            Expr::LitFlt { .. } => true,
+            Expr::LitStr { .. } => true,
+            Expr::LitBool { .. } => true,
+            Expr::LitArr { elements, .. } => {
+                return elements.iter().all(|elt| elt.is_const_lit());
+            }
+            Expr::LitObj { fields, .. } => {
+                return fields.iter().all(|field| {
+                    return match field.key.as_ref() {
+                        Expr::LitStr { .. } => true,
+                        Expr::Ident { .. } => true,
+                        _ => false,
+                    } && field.val.is_const_lit();
+                })
+            }
+            Expr::Paren { expr, .. } => expr.is_const_lit(),
+            Expr::Unary { expr, .. } => expr.is_const_lit(),
+            Expr::Binary { lhs, rhs, .. } => {
+                return lhs.is_const_lit() && rhs.is_const_lit();
+            }
+            Expr::Ternary {
+                cond, pass, fail, ..
+            } => {
+                return cond.is_const_lit() && pass.is_const_lit() && fail.is_const_lit();
+            }
+            Expr::LitFunc { .. } => false,
+            Expr::Ident { .. } => false,
+            Expr::Call { .. } => false,
+            Expr::Index { .. } => false,
+            Expr::Selector { .. } => false,
         }
     }
 }

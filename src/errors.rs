@@ -32,4 +32,15 @@ pub enum Error {
         at: Pos,
         found: String,
     },
+
+    Redeclaration {
+        at: Pos,
+        original: Pos,
+        name: String,
+    },
+
+    Undeclared {
+        at: Pos,
+        name: String,
+    },
 }
