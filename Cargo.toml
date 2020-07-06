@@ -1,0 +1,15 @@
+[package]
+name = "lx"
+version = "0.1.0"
+authors = ["Jacob McCollum <jacob.r.mccollum@gmail.com>"]
+edition = "2018"
+
+# [lib]
+# name = "lxlib"
+# path = "src/lib.rs"
+
+[[bin]]
+name = "lx"
+path = "src/main.rs"
+
+[dependencies]
