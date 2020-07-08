@@ -10,37 +10,47 @@ mod token;
 fn main() {
     use compiler::compile;
     use runtime::{
-        error::Error,
-        value::Value,
+        value::{
+            NativeFunc,
+            Value,
+        },
         vm::VM,
     };
 
     let vm = VM::new(
         compile(
             "
-            let fib = (fn() {
-                let cache = { '0': 0, '1': 1 };
-                let _fib = fn(n) {
-                    if n % 1 != 0 {
-                        throw 'can only call fib with integer';
+            fn counter() {
+                let this = {
+                    count: 0,
+                    incr: fn() {
+                        this.count = this.count+1;
+                    },
+                    decr: fn() {
+                        this.count = this.count-1;
                     }
-                    let result = cache[n];
-                    if result == null {
-                        result = _fib(n-2) + _fib(n-1);
-                        cache[n] = result;
-                    }
-                    return result;
                 };
-                return _fib;
-            })();
-            print(do(fn() { return 10; }, fib, fib));
+                return this;
+            }
+
+            let x = counter();
+            let i = x.incr;
+            let d = x.decr;
+            i();
+            print(x.count);
+            i();
+            print(x.count);
+            i();
+            print(x.count);
+            d();
+            print(x.count);
             ",
         )
         .expect("compilation error"),
     )
-    .with_global("print", Value::NativeFunc {
-        name:  "print".into(),
-        fnptr: |args| {
+    .with_global(
+        "print",
+        NativeFunc::new("print", |args| {
             for (i, v) in args.iter().enumerate() {
                 if i > 0 {
                     print!(" ");
@@ -49,11 +59,11 @@ fn main() {
             }
             print!("\n");
             Ok(Value::Null)
-        },
-    })
-    .with_global("do", Value::NativeFunc {
-        name:  "do".into(),
-        fnptr: |args| {
+        }),
+    )
+    .with_global(
+        "do",
+        NativeFunc::new("do", |args| {
             let mut prev: Option<Value> = None;
             for arg in args {
                 if let Some(v) = prev {
@@ -63,8 +73,8 @@ fn main() {
                 }
             }
             Ok(prev.map_or(Value::Null, |v| v))
-        },
-    });
+        }),
+    );
     let result = vm.run();
     match result {
         Ok(_) => println!("OK!\n\n{:?}", vm),

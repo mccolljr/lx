@@ -447,10 +447,8 @@ impl Parser {
         Ok(Expr::Selector {
             expr: Box::from(expr),
             dot,
-            element: Box::from(Expr::Ident {
-                pos:  element_ident.pos,
-                name: element_ident.lit,
-            }),
+            elt_name: element_ident.lit,
+            elt_pos: element_ident.pos,
         })
     }
 

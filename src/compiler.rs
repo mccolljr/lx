@@ -132,6 +132,12 @@ fn compile_stmt(insts: &mut Vec<Inst>, stmt: Stmt) {
                     compile_expr(insts, *rhs);
                     insts.push(Inst::IndexSet);
                 }
+                Expr::Selector { expr, elt_name, .. } => {
+                    compile_expr(insts, *expr);
+                    insts.push(Inst::PushStack(Value::from(elt_name)));
+                    compile_expr(insts, *rhs);
+                    insts.push(Inst::IndexSet);
+                }
                 _ => unreachable!(),
             };
         }
@@ -264,15 +270,10 @@ fn compile_expr(insts: &mut Vec<Inst>, expr: Expr) {
             compile_expr(insts, *index);
             insts.push(Inst::Index);
         }
-        Expr::Selector { expr, element, .. } => {
-            match element.as_ref() {
-                Expr::Ident { name, .. } => {
-                    compile_expr(insts, *expr);
-                    insts.push(Inst::PushStack(Value::from(name.clone())));
-                    insts.push(Inst::Index);
-                }
-                _ => unreachable!(),
-            }
+        Expr::Selector { expr, elt_name, .. } => {
+            compile_expr(insts, *expr);
+            insts.push(Inst::PushStack(Value::from(elt_name)));
+            insts.push(Inst::Index);
         }
     }
 }

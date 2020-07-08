@@ -279,9 +279,10 @@ pub enum Expr {
         csquare: Pos,
     },
     Selector {
-        expr:    Box<Expr>,
-        dot:     Pos,
-        element: Box<Expr>,
+        expr:     Box<Expr>,
+        dot:      Pos,
+        elt_name: String,
+        elt_pos:  Pos,
     },
 }
 
@@ -347,8 +348,8 @@ impl Display for Expr {
                 cond, pass, fail, ..
             } => write!(f, "({} ? {} : {})", cond, pass, fail),
             Expr::Index { expr, index, .. } => write!(f, "{}[{}]", expr, index),
-            Expr::Selector { expr, element, .. } => {
-                write!(f, "{}.{}", expr, element)
+            Expr::Selector { expr, elt_name, .. } => {
+                write!(f, "{}.{}", expr, elt_name)
             }
         }
     }
@@ -413,10 +414,9 @@ impl Node for Expr {
                 let end = csquare.offset + csquare.length;
                 Pos::span(start, end - start)
             }
-            Expr::Selector { expr, element, .. } => {
+            Expr::Selector { expr, elt_pos, .. } => {
                 let start = expr.pos().offset;
-                let endpos = element.pos();
-                let end = endpos.offset + endpos.length;
+                let end = elt_pos.offset + elt_pos.length;
                 Pos::span(start, end - start)
             }
         }
@@ -426,8 +426,9 @@ impl Node for Expr {
 impl Expr {
     pub fn is_assignable(&self) -> bool {
         match self {
-            Expr::Ident { .. } => true,
-            Expr::Index { .. } => true,
+            Expr::Ident { .. } | Expr::Index { .. } | Expr::Selector { .. } => {
+                true
+            }
             _ => false,
         }
     }

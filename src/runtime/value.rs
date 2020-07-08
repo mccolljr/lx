@@ -3,6 +3,7 @@ use super::{
     error::Error,
     inst::Inst,
     scope::Scope,
+    vm::VMState,
 };
 use std::{
     cell::RefCell,
@@ -15,6 +16,7 @@ use std::{
         Formatter,
         Result as FmtResult,
     },
+    iter::FromIterator,
     rc::Rc,
 };
 
@@ -25,16 +27,10 @@ pub enum Value {
     Flt(f64),
     Str(String),
     Bool(bool),
-    Object(Rc<RefCell<HashMap<String, Value>>>),
-    Array(Rc<RefCell<VecDeque<Value>>>),
-    Func {
-        name:   String,
-        caller: Rc<dyn Fn(Vec<Value>) -> Result<Value, Error>>,
-    },
-    NativeFunc {
-        name:  String,
-        fnptr: fn(Vec<Value>) -> Result<Value, Error>,
-    },
+    Object(Object),
+    Array(Array),
+    Func(Func),
+    NativeFunc(NativeFunc),
 }
 
 impl Debug for Value {
@@ -45,21 +41,10 @@ impl Debug for Value {
             Self::Flt(v) => f.debug_tuple("Flt").field(v).finish(),
             Self::Str(v) => f.debug_tuple("Str").field(v).finish(),
             Self::Bool(v) => f.debug_tuple("Bool").field(v).finish(),
-            Self::Object(v) => {
-                f.debug_tuple("Object").field(&v.borrow()).finish()
-            }
-            Self::Array(v) => {
-                f.debug_tuple("Array").field(&v.borrow()).finish()
-            }
-            Self::Func { name, .. } => {
-                f.debug_struct("Func").field("name", name).finish()
-            }
-            Self::NativeFunc { name, fnptr } => {
-                f.debug_struct("NativeFunc")
-                    .field("name", name)
-                    .field("fnptr", fnptr)
-                    .finish()
-            }
+            Self::Array(v) => write!(f, "{:?}", v),
+            Self::Object(v) => write!(f, "{:?}", v),
+            Self::Func(v) => write!(f, "{:?}", v),
+            Self::NativeFunc(v) => write!(f, "{:?}", v),
         }
     }
 }
@@ -111,35 +96,31 @@ impl From<bool> for Value {
 
 impl From<VecDeque<Value>> for Value {
     fn from(src: VecDeque<Value>) -> Self {
-        Value::Array(Rc::new(RefCell::new(src)))
+        Value::Array(Array(Rc::new(RefCell::new(src))))
     }
 }
 
 impl From<HashMap<String, Value>> for Value {
     fn from(src: HashMap<String, Value>) -> Self {
-        Value::Object(Rc::new(RefCell::new(src)))
+        Value::Object(Object(Rc::new(RefCell::new(src))))
     }
+}
+
+impl From<Func> for Value {
+    fn from(src: Func) -> Value { Value::Func(src) }
+}
+
+impl From<NativeFunc> for Value {
+    fn from(src: NativeFunc) -> Value { Value::NativeFunc(src) }
 }
 
 impl Value {
     pub fn op_index(&self, index: &Value) -> Result<Value, Error> {
         use Value::*;
         match (self, index) {
-            (Array(arr), Int(i)) => {
-                Ok(arr.borrow().get(*i as usize).map_or(Null, |v| v.clone()))
-            }
-            (Array(arr), Flt(f)) => {
-                Ok(arr
-                    .borrow()
-                    .get(*f as i64 as usize)
-                    .map_or(Null, |v| v.clone()))
-            }
-            (Object(obj), key) => {
-                Ok(obj
-                    .borrow()
-                    .get(&key.to_string())
-                    .map_or(Null, |v| v.clone()))
-            }
+            (Array(arr), Int(i)) => Ok(arr.index_get(*i as usize)),
+            (Array(arr), Flt(f)) => Ok(arr.index_get(*f as i64 as usize)),
+            (Object(obj), key) => Ok(obj.index_get(&key.to_string())),
             _ => {
                 Err(Error::InvalidOperation(format!(
                     "can't index {:?} with {:?}",
@@ -158,16 +139,16 @@ impl Value {
         match (self, index) {
             (Array(arr), Int(idx)) => {
                 // TODO: sparse arrays or array set out of range
-                arr.borrow_mut()[*idx as usize] = val.clone();
+                arr.index_set(*idx as usize, val.clone());
                 Ok(())
             }
             (Array(arr), Flt(idx)) => {
                 // TODO: sparse arrays or array set out of range
-                arr.borrow_mut()[*idx as i64 as usize] = val.clone();
+                arr.index_set(*idx as i64 as usize, val.clone());
                 Ok(())
             }
             (Object(obj), key) => {
-                obj.borrow_mut().insert(key.to_string(), val.clone());
+                obj.index_set(key.to_string(), val.clone());
                 Ok(())
             }
             _ => {
@@ -187,15 +168,7 @@ impl Value {
             (Int(left), Flt(right)) => Ok(Flt(*left as f64 + right)),
             (Flt(left), Int(right)) => Ok(Flt(left + *right as f64)),
             (Str(left), Str(right)) => Ok(Str(left.clone() + right.as_ref())),
-            (Array(left), Array(right)) => {
-                Ok(Array(Rc::new(RefCell::new(
-                    left.borrow()
-                        .iter()
-                        .chain(right.borrow().iter())
-                        .map(|v| v.clone())
-                        .collect(),
-                ))))
-            }
+            (Array(left), Array(right)) => Ok(Value::Array(left.concat(right))),
             _ => {
                 Err(Error::InvalidOperation(format!(
                     "can't add {:?} to {:?}",
@@ -271,9 +244,9 @@ impl Value {
 
     pub fn op_feed(&self, rhs: &Value) -> Result<Value, Error> {
         use Value::*;
-        match (self, rhs) {
-            (Array(target), _) => {
-                target.borrow_mut().push_back(rhs.clone());
+        match self {
+            Array(arr) => {
+                arr.push_back(rhs.clone());
                 Ok(self.clone())
             }
             _ => {
@@ -362,9 +335,7 @@ impl Value {
     pub fn op_feed_unary(&self) -> Result<Value, Error> {
         use Value::*;
         match self {
-            Array(target) => {
-                Ok(target.borrow_mut().pop_front().map_or(Null, |v| v.clone()))
-            }
+            Array(arr) => Ok(arr.pop_front()),
             _ => {
                 Err(Error::InvalidOperation(format!(
                     "can't receive feed from {:?}",
@@ -401,8 +372,8 @@ impl Value {
             Int(v) => *v != 0,
             Flt(v) => *v != 0.0,
             Str(v) => v.len() != 0,
-            Array(v) => v.borrow().len() != 0,
-            Object(v) => v.borrow().len() != 0,
+            Array(v) => v.len() != 0,
+            Object(v) => v.len() != 0,
             Func { .. } => true,
             NativeFunc { .. } => true,
         }
@@ -410,8 +381,8 @@ impl Value {
 
     pub fn call(&self, args: Vec<Value>) -> Result<Value, Error> {
         match self {
-            Value::Func { caller, .. } => caller(args),
-            Value::NativeFunc { fnptr, .. } => fnptr(args),
+            Value::Func(f) => f.call(args),
+            Value::NativeFunc(f) => f.call(args),
             _ => {
                 return Err(Error::InvalidOperation(format!(
                     "can't call {:?}",
@@ -468,5 +439,186 @@ impl Value {
             TokenType::OpFeed => target.op_feed_unary(),
             _ => unreachable!(),
         }
+    }
+}
+
+#[derive(Clone, PartialEq)]
+pub struct Object(Rc<RefCell<HashMap<String, Value>>>);
+
+impl Debug for Object {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+        f.debug_tuple("Object").field(&self.0.borrow()).finish()
+    }
+}
+
+impl Object {
+    fn len(&self) -> usize { self.0.borrow().len() }
+
+    pub fn index_get(&self, index: &String) -> Value {
+        self.0
+            .borrow()
+            .get(index)
+            .map_or(Value::Null, |v| v.clone())
+    }
+
+    pub fn index_set(&self, index: String, val: Value) {
+        self.0.borrow_mut().insert(index, val);
+    }
+}
+
+#[derive(Clone, PartialEq)]
+pub struct Array(Rc<RefCell<VecDeque<Value>>>);
+
+impl Debug for Array {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+        f.debug_tuple("Array").field(&self.0.borrow()).finish()
+    }
+}
+
+impl Array {
+    pub fn len(&self) -> usize { self.0.borrow().len() }
+
+    pub fn pop_front(&self) -> Value {
+        self.0.borrow_mut().pop_front().map_or(Value::Null, |v| v)
+    }
+
+    // pub fn pop_back(&self) -> Value {
+    //     self.0.borrow_mut().pop_back().map_or(Value::Null, |v| v)
+    // }
+
+    // pub fn push_front(&self, val: Value) {
+    // self.0.borrow_mut().push_front(val) }
+
+    pub fn push_back(&self, val: Value) { self.0.borrow_mut().push_back(val) }
+
+    pub fn index_get(&self, index: usize) -> Value {
+        self.0
+            .borrow()
+            .get(index)
+            .map_or(Value::Null, |v| v.clone())
+    }
+
+    pub fn index_set(&self, index: usize, val: Value) {
+        self.0.borrow_mut()[index] = val;
+    }
+
+    pub fn concat(&self, other: &Self) -> Self {
+        return Array(Rc::new(RefCell::new(VecDeque::from_iter(
+            self.0
+                .borrow()
+                .iter()
+                .chain(other.0.borrow().iter())
+                .map(|v| v.clone()),
+        ))));
+    }
+}
+
+#[derive(Clone)]
+pub struct Func {
+    vm:      Rc<VMState>,
+    name:    String,
+    args:    Rc<[String]>,
+    insts:   Rc<[Inst]>,
+    closure: Rc<Scope>,
+}
+
+impl Debug for Func {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+        f.debug_struct("Func")
+            .field("vm", &(self.vm.as_ref() as *const VMState))
+            .field("name", &self.name)
+            .field("args", &self.args)
+            .field("insts", &(self.insts.as_ref() as *const [Inst]))
+            .field("closure", &(self.closure.as_ref() as *const Scope))
+            .finish()
+    }
+}
+
+impl PartialEq<Func> for Func {
+    fn eq(&self, other: &Func) -> bool {
+        return std::ptr::eq(self.vm.as_ref(), other.vm.as_ref())
+            && std::ptr::eq(self.args.as_ref(), other.args.as_ref())
+            && std::ptr::eq(self.insts.as_ref(), other.insts.as_ref())
+            && std::ptr::eq(self.closure.as_ref(), other.closure.as_ref())
+            && self.name == other.name;
+    }
+}
+
+impl Eq for Func {}
+
+impl Func {
+    pub fn new(
+        name: impl Into<String>,
+        vm: Rc<VMState>,
+        args: Rc<[String]>,
+        insts: Rc<[Inst]>,
+        closure: Rc<Scope>,
+    ) -> Self {
+        Func {
+            name: name.into(),
+            vm,
+            args,
+            insts,
+            closure,
+        }
+    }
+
+    // pub fn name(&self) -> &str { self.name.as_ref() }
+
+    pub fn call(&self, args: Vec<Value>) -> Result<Value, Error> {
+        if args.len() != self.args.len() {
+            return Err(Error::ArgumentError(format!(
+                "wrong number of arguments: expected {}, got {}",
+                self.args.len(),
+                args.len()
+            )));
+        }
+        let scope = Rc::new(Scope::extend(Rc::clone(&self.closure)));
+        for (i, arg) in args.into_iter().enumerate() {
+            scope.declare(self.args[i].clone(), arg);
+        }
+        self.vm.run_frame(Rc::clone(&self.insts), scope)?;
+        self.vm.pop_stack()
+    }
+}
+
+#[derive(Clone)]
+pub struct NativeFunc {
+    name:  String,
+    fnptr: fn(Vec<Value>) -> Result<Value, Error>,
+}
+
+impl Debug for NativeFunc {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+        f.debug_struct("NativeFunc")
+            .field("name", &self.name)
+            .field("fnptr", &self.fnptr)
+            .finish()
+    }
+}
+
+impl PartialEq<NativeFunc> for NativeFunc {
+    fn eq(&self, other: &NativeFunc) -> bool {
+        return self.fnptr == other.fnptr && self.name == other.name;
+    }
+}
+
+impl Eq for NativeFunc {}
+
+impl NativeFunc {
+    pub fn new(
+        name: impl Into<String>,
+        fnptr: fn(Vec<Value>) -> Result<Value, Error>,
+    ) -> Self {
+        NativeFunc {
+            name: name.into(),
+            fnptr,
+        }
+    }
+
+    // pub fn name(&self) -> &str { self.name.as_ref() }
+
+    pub fn call(&self, args: Vec<Value>) -> Result<Value, Error> {
+        (self.fnptr)(args)
     }
 }

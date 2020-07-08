@@ -2,7 +2,10 @@ use super::{
     error::Error,
     inst::Inst,
     scope::Scope,
-    value::Value,
+    value::{
+        Func,
+        Value,
+    },
 };
 use std::{
     cell::RefCell,
@@ -33,8 +36,12 @@ impl VM {
         }
     }
 
-    pub fn with_global(self, key: impl Into<String>, val: Value) -> Self {
-        self.state.root_scope.set(key.into(), val);
+    pub fn with_global(
+        self,
+        key: impl Into<String>,
+        val: impl Into<Value>,
+    ) -> Self {
+        self.state.root_scope.set(key.into(), val.into());
         self
     }
 
@@ -47,7 +54,7 @@ impl VM {
 }
 
 impl VMState {
-    fn pop_stack(self: &Rc<Self>) -> Result<Value, Error> {
+    pub(crate) fn pop_stack(self: &Rc<Self>) -> Result<Value, Error> {
         let mut stack = self.stack.borrow_mut();
         if let Some(popped) = stack.pop() {
             Ok(popped)
@@ -56,19 +63,19 @@ impl VMState {
         }
     }
 
-    fn push_stack(self: &Rc<Self>, val: Value) -> Result<(), Error> {
+    pub(crate) fn push_stack(self: &Rc<Self>, val: Value) -> Result<(), Error> {
         let mut stack = self.stack.borrow_mut();
         stack.push(val);
         Ok(())
     }
 
-    fn truncate_stack(self: &Rc<Self>, sp: usize) {
+    pub(crate) fn truncate_stack(self: &Rc<Self>, sp: usize) {
         let mut stack = self.stack.borrow_mut();
         stack.truncate(sp);
     }
 
     #[inline(always)]
-    fn run_frame(
+    pub(crate) fn run_frame(
         self: &Rc<Self>,
         insts: Rc<[Inst]>,
         scope: Rc<Scope>,
@@ -123,16 +130,13 @@ impl VMState {
                 Inst::MakeClosure(fn_args, fn_insts, maybe_name) => {
                     let name = maybe_name
                         .map_or("anonymous".into(), |name| name.clone());
-                    self.push_stack(Value::Func {
-                        name:   name.clone(),
-                        caller: VMState::make_caller(
-                            Rc::clone(self),
-                            name,
-                            Rc::from(fn_args),
-                            Rc::clone(&fn_insts),
-                            Rc::new(Scope::extend(Rc::clone(&scope))),
-                        ),
-                    })?;
+                    self.push_stack(Value::Func(Func::new(
+                        &name,
+                        Rc::clone(self),
+                        Rc::from(fn_args),
+                        Rc::clone(&fn_insts),
+                        Rc::new(Scope::extend(Rc::clone(&scope))),
+                    )))?;
                 }
                 Inst::InitCall => {
                     self.push_stack(Value::Int(0))?;
@@ -204,40 +208,5 @@ impl VMState {
         self.truncate_stack(ret_sp);
         self.push_stack(ret_val)?;
         Ok(())
-    }
-
-    fn get_return_sp(self: &Rc<Self>) -> Result<usize, Error> {
-        let stack = self.stack.borrow();
-        let size = stack.len();
-        let last = stack.last();
-        if let Some(Value::Int(argct)) = last {
-            Ok(size - (*argct as usize) - 1)
-        } else {
-            Err(Error::MalformedStackPanic)
-        }
-    }
-
-    fn make_caller(
-        state: Rc<Self>,
-        _name: String,
-        arg_names: Rc<[String]>,
-        insts: Rc<[Inst]>,
-        outer: Rc<Scope>,
-    ) -> Rc<dyn Fn(Vec<Value>) -> Result<Value, Error>> {
-        Rc::new(move |args| -> Result<Value, Error> {
-            if args.len() != arg_names.len() {
-                return Err(Error::ArgumentError(format!(
-                    "wrong number of arguments: expected {}, got {}",
-                    arg_names.len(),
-                    args.len()
-                )));
-            }
-            let scope = Rc::new(Scope::extend(Rc::clone(&outer)));
-            for (i, arg) in args.into_iter().enumerate() {
-                scope.declare(arg_names[i].clone(), arg);
-            }
-            state.run_frame(Rc::clone(&insts), scope)?;
-            state.pop_stack()
-        })
     }
 }
