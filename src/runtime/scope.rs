@@ -1,13 +1,19 @@
 use super::value::Value;
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::fmt::{Display, Formatter, Result as FmtResult};
-use std::rc::Rc;
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    fmt::{
+        Display,
+        Formatter,
+        Result as FmtResult,
+    },
+    rc::Rc,
+};
 
 #[derive(Debug, Clone)]
 pub struct Scope {
     pub parent: Option<Rc<Scope>>,
-    entries: Rc<RefCell<HashMap<String, Value>>>,
+    entries:    Rc<RefCell<HashMap<String, Value>>>,
 }
 
 impl Display for Scope {
@@ -59,9 +65,7 @@ impl Scope {
         Value::Null
     }
 
-    pub fn extend(root: Rc<Scope>) -> Scope {
-        Scope::new(Some(root))
-    }
+    pub fn extend(root: Rc<Scope>) -> Scope { Scope::new(Some(root)) }
 
     fn has_local(&self, key: &String) -> bool {
         self.entries.borrow().contains_key(key)

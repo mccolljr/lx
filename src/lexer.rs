@@ -1,12 +1,21 @@
-use super::errors::Error;
-use super::source::{Code, Pos};
-use super::token::{Token, TokenType, TokenType::*};
+use super::{
+    errors::Error,
+    source::{
+        Code,
+        Pos,
+    },
+    token::{
+        Token,
+        TokenType,
+        TokenType::*,
+    },
+};
 use std::iter::FromIterator;
 
 pub struct Lexer {
-    src: Code,
-    cur_i: usize,
-    cur_c: char,
+    src:    Code,
+    cur_i:  usize,
+    cur_c:  char,
     peek_i: usize,
     peek_c: char,
 }
@@ -14,9 +23,9 @@ pub struct Lexer {
 impl Lexer {
     pub fn new(src: &Code) -> Self {
         Lexer {
-            src: src.clone(),
-            cur_i: 0,
-            cur_c: '\0',
+            src:    src.clone(),
+            cur_i:  0,
+            cur_c:  '\0',
             peek_i: 0,
             peek_c: if src.len() > 0 { src[0] } else { '\0' },
         }
@@ -65,10 +74,12 @@ impl Lexer {
             '<' => self.lex_2(&[('=', OpLeq), ('<', OpFeed)], OpLt),
             '=' => self.lex_2(&[('=', OpEq)], Assign),
             '!' => self.lex_2(&[('=', OpNeq)], Bang),
-            _ => Err(Error::InvalidCharacter {
-                at: Pos::one(self.cur_i),
-                ch: self.cur_c,
-            }),
+            _ => {
+                Err(Error::InvalidCharacter {
+                    at: Pos::one(self.cur_i),
+                    ch: self.cur_c,
+                })
+            }
         }
     }
 
@@ -86,13 +97,9 @@ impl Lexer {
         };
     }
 
-    fn at_eof(&self) -> bool {
-        self.cur_i >= self.src.len()
-    }
+    fn at_eof(&self) -> bool { self.cur_i >= self.src.len() }
 
-    fn peek_eof(&self) -> bool {
-        self.peek_i >= self.src.len()
-    }
+    fn peek_eof(&self) -> bool { self.peek_i >= self.src.len() }
 
     #[inline]
     fn lex_1(&self, typ: TokenType) -> Result<Token, Error> {
@@ -106,7 +113,11 @@ impl Lexer {
     }
 
     #[inline]
-    fn lex_2(&mut self, opts: &[(char, TokenType)], fallback: TokenType) -> Result<Token, Error> {
+    fn lex_2(
+        &mut self,
+        opts: &[(char, TokenType)],
+        fallback: TokenType,
+    ) -> Result<Token, Error> {
         for (c, typ) in opts {
             if self.peek_c == *c {
                 let start = self.cur_i;
@@ -126,13 +137,14 @@ impl Lexer {
         let mut has_decimal = false;
         let mut has_exp = false;
         while !self.peek_eof()
-            && (self.peek_c.is_ascii_digit() || ['.', 'e'].contains(&self.peek_c))
+            && (self.peek_c.is_ascii_digit()
+                || ['.', 'e'].contains(&self.peek_c))
         {
             if self.peek_c == 'e' {
                 if has_exp {
                     return Err(Error::UnexpectedCharacter {
-                        at: Pos::one(self.peek_i),
-                        ch: self.peek_c,
+                        at:      Pos::one(self.peek_i),
+                        ch:      self.peek_c,
                         context: "numeric literal",
                     });
                 }
@@ -142,8 +154,8 @@ impl Lexer {
             if self.peek_c == '.' {
                 if has_exp || has_decimal {
                     return Err(Error::UnexpectedCharacter {
-                        at: Pos::one(self.peek_i),
-                        ch: self.peek_c,
+                        at:      Pos::one(self.peek_i),
+                        ch:      self.peek_c,
                         context: "numeric literal",
                     });
                 }
@@ -171,7 +183,9 @@ impl Lexer {
     fn lex_bool_ident_or_keyword(&mut self) -> Result<Token, Error> {
         let start = self.cur_i;
 
-        while !self.peek_eof() && (self.peek_c.is_ascii_alphanumeric() || self.peek_c == '_') {
+        while !self.peek_eof()
+            && (self.peek_c.is_ascii_alphanumeric() || self.peek_c == '_')
+        {
             self.advance();
         }
 
@@ -255,10 +269,12 @@ impl Lexer {
                 lit.push('\t');
                 Ok(())
             }
-            _ => Err(Error::InvalidEscapeSequence {
-                at: Pos::one(self.cur_i),
-                ch: self.cur_c,
-            }),
+            _ => {
+                Err(Error::InvalidEscapeSequence {
+                    at: Pos::one(self.cur_i),
+                    ch: self.cur_c,
+                })
+            }
         }
     }
 }

@@ -1,5 +1,9 @@
 use crate::source::Pos;
-use std::fmt::{Display, Formatter, Result as FmtResult};
+use std::fmt::{
+    Display,
+    Formatter,
+    Result as FmtResult,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Token {
@@ -122,8 +126,9 @@ impl TokenType {
     pub fn is_operator(&self) -> bool {
         use TokenType::*;
         match self {
-            OpAdd | OpSub | OpMul | OpDiv | OpRem | OpEq | OpNeq | OpLeq | OpGeq | OpLt | OpGt
-            | OParen | Question | OpFeed | OSquare | Dot => true,
+            OpAdd | OpSub | OpMul | OpDiv | OpRem | OpEq | OpNeq | OpLeq
+            | OpGeq | OpLt | OpGt | OParen | Question | OpFeed | OSquare
+            | Dot => true,
             _ => false,
         }
     }

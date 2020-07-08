@@ -1,10 +1,22 @@
-use super::error::Error;
-use super::inst::Inst;
-use super::scope::Scope;
-use std::cell::RefCell;
-use std::collections::{HashMap, VecDeque};
-use std::fmt::{Debug, Formatter, Result as FmtResult};
-use std::rc::Rc;
+use super::{
+    super::token::TokenType,
+    error::Error,
+    inst::Inst,
+    scope::Scope,
+};
+use std::{
+    cell::RefCell,
+    collections::{
+        HashMap,
+        VecDeque,
+    },
+    fmt::{
+        Debug,
+        Formatter,
+        Result as FmtResult,
+    },
+    rc::Rc,
+};
 
 #[derive(Clone)]
 pub enum Value {
@@ -16,13 +28,11 @@ pub enum Value {
     Object(Rc<RefCell<HashMap<String, Value>>>),
     Array(Rc<RefCell<VecDeque<Value>>>),
     Func {
-        name: String,
-        argct: usize,
-        insts: Rc<[Inst]>,
-        outer: Rc<Scope>,
+        name:   String,
+        caller: Rc<dyn Fn(Vec<Value>) -> Result<Value, Error>>,
     },
     NativeFunc {
-        name: String,
+        name:  String,
         fnptr: fn(Vec<Value>) -> Result<Value, Error>,
     },
 }
@@ -35,21 +45,21 @@ impl Debug for Value {
             Self::Flt(v) => f.debug_tuple("Flt").field(v).finish(),
             Self::Str(v) => f.debug_tuple("Str").field(v).finish(),
             Self::Bool(v) => f.debug_tuple("Bool").field(v).finish(),
-            Self::Object(v) => f.debug_tuple("Object").field(&v.borrow()).finish(),
-            Self::Array(v) => f.debug_tuple("Array").field(&v.borrow()).finish(),
-            Self::Func {
-                argct, insts, name, ..
-            } => f
-                .debug_struct("Func")
-                .field("name", name)
-                .field("argct", argct)
-                .field("insts", insts)
-                .finish(),
-            Self::NativeFunc { name, fnptr } => f
-                .debug_struct("NativeFunc")
-                .field("name", name)
-                .field("fnptr", fnptr)
-                .finish(),
+            Self::Object(v) => {
+                f.debug_tuple("Object").field(&v.borrow()).finish()
+            }
+            Self::Array(v) => {
+                f.debug_tuple("Array").field(&v.borrow()).finish()
+            }
+            Self::Func { name, .. } => {
+                f.debug_struct("Func").field("name", name).finish()
+            }
+            Self::NativeFunc { name, fnptr } => {
+                f.debug_struct("NativeFunc")
+                    .field("name", name)
+                    .field("fnptr", fnptr)
+                    .finish()
+            }
         }
     }
 }
@@ -80,33 +90,23 @@ impl PartialEq for Value {
 }
 
 impl From<String> for Value {
-    fn from(src: String) -> Self {
-        Value::Str(src)
-    }
+    fn from(src: String) -> Self { Value::Str(src) }
 }
 
 impl From<&str> for Value {
-    fn from(src: &str) -> Self {
-        Value::Str(src.to_owned())
-    }
+    fn from(src: &str) -> Self { Value::Str(src.to_owned()) }
 }
 
 impl From<i64> for Value {
-    fn from(src: i64) -> Self {
-        Value::Int(src)
-    }
+    fn from(src: i64) -> Self { Value::Int(src) }
 }
 
 impl From<f64> for Value {
-    fn from(src: f64) -> Self {
-        Value::Flt(src)
-    }
+    fn from(src: f64) -> Self { Value::Flt(src) }
 }
 
 impl From<bool> for Value {
-    fn from(src: bool) -> Self {
-        Value::Bool(src)
-    }
+    fn from(src: bool) -> Self { Value::Bool(src) }
 }
 
 impl From<VecDeque<Value>> for Value {
@@ -125,23 +125,35 @@ impl Value {
     pub fn op_index(&self, index: &Value) -> Result<Value, Error> {
         use Value::*;
         match (self, index) {
-            (Array(arr), Int(i)) => Ok(arr.borrow().get(*i as usize).map_or(Null, |v| v.clone())),
-            (Array(arr), Flt(f)) => Ok(arr
-                .borrow()
-                .get(*f as i64 as usize)
-                .map_or(Null, |v| v.clone())),
-            (Object(obj), key) => Ok(obj
-                .borrow()
-                .get(&key.to_string())
-                .map_or(Null, |v| v.clone())),
-            _ => Err(Error::InvalidOperation(format!(
-                "can't index {:?} with {:?}",
-                self, index
-            ))),
+            (Array(arr), Int(i)) => {
+                Ok(arr.borrow().get(*i as usize).map_or(Null, |v| v.clone()))
+            }
+            (Array(arr), Flt(f)) => {
+                Ok(arr
+                    .borrow()
+                    .get(*f as i64 as usize)
+                    .map_or(Null, |v| v.clone()))
+            }
+            (Object(obj), key) => {
+                Ok(obj
+                    .borrow()
+                    .get(&key.to_string())
+                    .map_or(Null, |v| v.clone()))
+            }
+            _ => {
+                Err(Error::InvalidOperation(format!(
+                    "can't index {:?} with {:?}",
+                    self, index
+                )))
+            }
         }
     }
 
-    pub fn op_index_set(&self, index: &Value, val: &Value) -> Result<(), Error> {
+    pub fn op_index_set(
+        &self,
+        index: &Value,
+        val: &Value,
+    ) -> Result<(), Error> {
         use Value::*;
         match (self, index) {
             (Array(arr), Int(idx)) => {
@@ -158,10 +170,12 @@ impl Value {
                 obj.borrow_mut().insert(key.to_string(), val.clone());
                 Ok(())
             }
-            _ => Err(Error::InvalidOperation(format!(
-                "can't index {:?} with {:?}",
-                self, index
-            ))),
+            _ => {
+                Err(Error::InvalidOperation(format!(
+                    "can't index {:?} with {:?}",
+                    self, index
+                )))
+            }
         }
     }
 
@@ -173,17 +187,21 @@ impl Value {
             (Int(left), Flt(right)) => Ok(Flt(*left as f64 + right)),
             (Flt(left), Int(right)) => Ok(Flt(left + *right as f64)),
             (Str(left), Str(right)) => Ok(Str(left.clone() + right.as_ref())),
-            (Array(left), Array(right)) => Ok(Array(Rc::new(RefCell::new(
-                left.borrow()
-                    .iter()
-                    .chain(right.borrow().iter())
-                    .map(|v| v.clone())
-                    .collect(),
-            )))),
-            _ => Err(Error::InvalidOperation(format!(
-                "can't add {:?} to {:?}",
-                self, rhs
-            ))),
+            (Array(left), Array(right)) => {
+                Ok(Array(Rc::new(RefCell::new(
+                    left.borrow()
+                        .iter()
+                        .chain(right.borrow().iter())
+                        .map(|v| v.clone())
+                        .collect(),
+                ))))
+            }
+            _ => {
+                Err(Error::InvalidOperation(format!(
+                    "can't add {:?} to {:?}",
+                    self, rhs
+                )))
+            }
         }
     }
 
@@ -194,10 +212,12 @@ impl Value {
             (Flt(left), Flt(right)) => Ok(Flt(left - right)),
             (Int(left), Flt(right)) => Ok(Flt(*left as f64 - right)),
             (Flt(left), Int(right)) => Ok(Flt(left - *right as f64)),
-            _ => Err(Error::InvalidOperation(format!(
-                "can't subtract {:?} from {:?}",
-                self, rhs
-            ))),
+            _ => {
+                Err(Error::InvalidOperation(format!(
+                    "can't subtract {:?} from {:?}",
+                    self, rhs
+                )))
+            }
         }
     }
 
@@ -208,10 +228,12 @@ impl Value {
             (Flt(left), Flt(right)) => Ok(Flt(left * right)),
             (Int(left), Flt(right)) => Ok(Flt(*left as f64 * right)),
             (Flt(left), Int(right)) => Ok(Flt(left * *right as f64)),
-            _ => Err(Error::InvalidOperation(format!(
-                "can't multiply {:?} by {:?}",
-                self, rhs
-            ))),
+            _ => {
+                Err(Error::InvalidOperation(format!(
+                    "can't multiply {:?} by {:?}",
+                    self, rhs
+                )))
+            }
         }
     }
 
@@ -222,10 +244,12 @@ impl Value {
             (Flt(left), Flt(right)) => Ok(Flt(left / right)),
             (Int(left), Flt(right)) => Ok(Flt(*left as f64 / right)),
             (Flt(left), Int(right)) => Ok(Flt(left / *right as f64)),
-            _ => Err(Error::InvalidOperation(format!(
-                "can't divide {:?} by {:?}",
-                self, rhs
-            ))),
+            _ => {
+                Err(Error::InvalidOperation(format!(
+                    "can't divide {:?} by {:?}",
+                    self, rhs
+                )))
+            }
         }
     }
 
@@ -236,10 +260,12 @@ impl Value {
             (Flt(left), Flt(right)) => Ok(Flt(left % right)),
             (Int(left), Flt(right)) => Ok(Flt(*left as f64 % right)),
             (Flt(left), Int(right)) => Ok(Flt(left % *right as f64)),
-            _ => Err(Error::InvalidOperation(format!(
-                "can't divide {:?} by {:?} for a remainder",
-                self, rhs
-            ))),
+            _ => {
+                Err(Error::InvalidOperation(format!(
+                    "can't divide {:?} by {:?} for a remainder",
+                    self, rhs
+                )))
+            }
         }
     }
 
@@ -250,10 +276,12 @@ impl Value {
                 target.borrow_mut().push_back(rhs.clone());
                 Ok(self.clone())
             }
-            _ => Err(Error::InvalidOperation(format!(
-                "can't feed {:?} into {:?}",
-                rhs, self,
-            ))),
+            _ => {
+                Err(Error::InvalidOperation(format!(
+                    "can't feed {:?} into {:?}",
+                    rhs, self,
+                )))
+            }
         }
     }
 
@@ -274,10 +302,12 @@ impl Value {
             (Flt(left), Flt(right)) => Ok(Bool(left > right)),
             (Int(left), Flt(right)) => Ok(Bool(*left as f64 > *right)),
             (Flt(left), Int(right)) => Ok(Bool(*left > *right as f64)),
-            _ => Err(Error::InvalidOperation(format!(
-                "can't compare {:?} to {:?} (>)",
-                self, rhs,
-            ))),
+            _ => {
+                Err(Error::InvalidOperation(format!(
+                    "can't compare {:?} to {:?} (>)",
+                    self, rhs,
+                )))
+            }
         }
     }
 
@@ -288,10 +318,12 @@ impl Value {
             (Flt(left), Flt(right)) => Ok(Bool(left < right)),
             (Int(left), Flt(right)) => Ok(Bool((*left as f64) < *right)),
             (Flt(left), Int(right)) => Ok(Bool(*left < *right as f64)),
-            _ => Err(Error::InvalidOperation(format!(
-                "can't compare {:?} to {:?} (<)",
-                self, rhs,
-            ))),
+            _ => {
+                Err(Error::InvalidOperation(format!(
+                    "can't compare {:?} to {:?} (<)",
+                    self, rhs,
+                )))
+            }
         }
     }
 
@@ -302,10 +334,12 @@ impl Value {
             (Flt(left), Flt(right)) => Ok(Bool(left >= right)),
             (Int(left), Flt(right)) => Ok(Bool(*left as f64 >= *right)),
             (Flt(left), Int(right)) => Ok(Bool(*left >= *right as f64)),
-            _ => Err(Error::InvalidOperation(format!(
-                "can't compare {:?} to {:?} (>=)",
-                self, rhs,
-            ))),
+            _ => {
+                Err(Error::InvalidOperation(format!(
+                    "can't compare {:?} to {:?} (>=)",
+                    self, rhs,
+                )))
+            }
         }
     }
 
@@ -316,21 +350,27 @@ impl Value {
             (Flt(left), Flt(right)) => Ok(Bool(left <= right)),
             (Int(left), Flt(right)) => Ok(Bool((*left as f64) <= *right)),
             (Flt(left), Int(right)) => Ok(Bool(*left <= *right as f64)),
-            _ => Err(Error::InvalidOperation(format!(
-                "can't compare {:?} to {:?} (<=)",
-                self, rhs,
-            ))),
+            _ => {
+                Err(Error::InvalidOperation(format!(
+                    "can't compare {:?} to {:?} (<=)",
+                    self, rhs,
+                )))
+            }
         }
     }
 
     pub fn op_feed_unary(&self) -> Result<Value, Error> {
         use Value::*;
         match self {
-            Array(target) => Ok(target.borrow_mut().pop_front().map_or(Null, |v| v.clone())),
-            _ => Err(Error::InvalidOperation(format!(
-                "can't receive feed from {:?}",
-                self,
-            ))),
+            Array(target) => {
+                Ok(target.borrow_mut().pop_front().map_or(Null, |v| v.clone()))
+            }
+            _ => {
+                Err(Error::InvalidOperation(format!(
+                    "can't receive feed from {:?}",
+                    self,
+                )))
+            }
         }
     }
 
@@ -339,10 +379,12 @@ impl Value {
         match self {
             Int(v) => Ok(Int(-1 * v)),
             Flt(v) => Ok(Flt(-1.0 * v)),
-            _ => Err(Error::InvalidOperation(format!(
-                "can't make {:?} negative",
-                self,
-            ))),
+            _ => {
+                Err(Error::InvalidOperation(format!(
+                    "can't make {:?} negative",
+                    self,
+                )))
+            }
         }
     }
 
@@ -366,6 +408,19 @@ impl Value {
         }
     }
 
+    pub fn call(&self, args: Vec<Value>) -> Result<Value, Error> {
+        match self {
+            Value::Func { caller, .. } => caller(args),
+            Value::NativeFunc { fnptr, .. } => fnptr(args),
+            _ => {
+                return Err(Error::InvalidOperation(format!(
+                    "can't call {:?}",
+                    self
+                )));
+            }
+        }
+    }
+
     pub fn to_string(&self) -> String {
         use Value::*;
         match self {
@@ -378,6 +433,40 @@ impl Value {
             Object(_) => "<object>".into(),
             Func { .. } => "<func>".into(),
             NativeFunc { .. } => "<native func>".into(),
+        }
+    }
+
+    pub(crate) fn op_binary(
+        lhs: &Value,
+        rhs: &Value,
+        op: TokenType,
+    ) -> Result<Value, Error> {
+        match op {
+            TokenType::OpAdd => lhs.op_add(&rhs),
+            TokenType::OpSub => lhs.op_sub(&rhs),
+            TokenType::OpMul => lhs.op_mul(&rhs),
+            TokenType::OpDiv => lhs.op_div(&rhs),
+            TokenType::OpRem => lhs.op_rem(&rhs),
+            TokenType::OpEq => lhs.op_eq(&rhs),
+            TokenType::OpNeq => lhs.op_neq(&rhs),
+            TokenType::OpGeq => lhs.op_geq(&rhs),
+            TokenType::OpLeq => lhs.op_leq(&rhs),
+            TokenType::OpGt => lhs.op_gt(&rhs),
+            TokenType::OpLt => lhs.op_lt(&rhs),
+            TokenType::OpFeed => lhs.op_feed(&rhs),
+            _ => unreachable!(),
+        }
+    }
+
+    pub(crate) fn op_unary(
+        target: &Value,
+        op: TokenType,
+    ) -> Result<Value, Error> {
+        match op {
+            TokenType::OpSub => target.op_sub_unary(),
+            TokenType::Bang => target.op_not_unary(),
+            TokenType::OpFeed => target.op_feed_unary(),
+            _ => unreachable!(),
         }
     }
 }

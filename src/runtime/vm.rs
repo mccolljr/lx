@@ -1,53 +1,81 @@
-use super::super::token::TokenType;
-use super::error::Error;
-use super::inst::Inst;
-use super::scope::Scope;
-use super::value::Value;
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::rc::Rc;
+use super::{
+    error::Error,
+    inst::Inst,
+    scope::Scope,
+    value::Value,
+};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    rc::Rc,
+};
 
 #[derive(Debug)]
 pub struct VM {
-    stack: RefCell<Vec<Value>>,
+    state: Rc<VMState>,
+}
+
+#[derive(Debug)]
+pub struct VMState {
+    stack:      RefCell<Vec<Value>>,
     root_scope: Rc<Scope>,
-    insts: Rc<[Inst]>,
+    insts:      Rc<[Inst]>,
 }
 
 impl VM {
     pub fn new(prog: Vec<Inst>) -> Self {
         VM {
-            stack: RefCell::new(Vec::with_capacity(2048)),
-            root_scope: Rc::from(Scope::new(None)),
-            insts: Rc::from(prog),
+            state: Rc::new(VMState {
+                stack:      RefCell::new(Vec::with_capacity(2048)),
+                root_scope: Rc::from(Scope::new(None)),
+                insts:      Rc::from(prog),
+            }),
         }
     }
 
     pub fn with_global(self, key: impl Into<String>, val: Value) -> Self {
-        self.root_scope.set(key.into(), val);
+        self.state.root_scope.set(key.into(), val);
         self
     }
 
-    fn pop_stack(&self) -> Result<Value, Error> {
+    pub fn run(&self) -> Result<(), Error> {
+        self.state.run_frame(
+            Rc::clone(&self.state.insts),
+            Rc::clone(&self.state.root_scope),
+        )
+    }
+}
+
+impl VMState {
+    fn pop_stack(self: &Rc<Self>) -> Result<Value, Error> {
         let mut stack = self.stack.borrow_mut();
-        stack.pop().map_or(Err(Error::StackUnderflow), |v| Ok(v))
+        if let Some(popped) = stack.pop() {
+            Ok(popped)
+        } else {
+            Err(Error::StackUnderflow)
+        }
     }
 
-    fn push_stack(&self, val: Value) -> Result<(), Error> {
+    fn push_stack(self: &Rc<Self>, val: Value) -> Result<(), Error> {
         let mut stack = self.stack.borrow_mut();
         stack.push(val);
         Ok(())
     }
 
-    fn truncate_stack(&self, sp: usize) {
+    fn truncate_stack(self: &Rc<Self>, sp: usize) {
         let mut stack = self.stack.borrow_mut();
         stack.truncate(sp);
     }
 
     #[inline(always)]
-    fn run_frame(&self, insts: Rc<[Inst]>, scope: Rc<Scope>, ret_sp: usize) -> Result<(), Error> {
+    fn run_frame(
+        self: &Rc<Self>,
+        insts: Rc<[Inst]>,
+        scope: Rc<Scope>,
+    ) -> Result<(), Error> {
         let mut ip: usize = 0;
         let mut ret_val = Value::Null;
+        let ret_sp = self.stack.borrow().len();
         loop {
             if ip >= insts.len() {
                 break;
@@ -69,56 +97,17 @@ impl VM {
                 Inst::DeclareNamed(ref name) => {
                     scope.declare(name.clone(), self.pop_stack()?);
                 }
-                Inst::DeclareArgs(args) => {
-                    let want_argct = args.len();
-                    if let Value::Int(i_have_argct) = self.pop_stack()? {
-                        if i_have_argct < 0 {
-                            return Err(Error::MalformedStackPanic);
-                        }
-                        let have_argct = i_have_argct as usize;
-                        if have_argct != want_argct {
-                            return Err(Error::ArgumentError(format!(
-                                "wrong number of arguments: expected {}, got {}",
-                                want_argct, have_argct
-                            )));
-                        }
-                        for i in 1..=want_argct {
-                            scope.declare(args[want_argct - i].clone(), self.pop_stack()?);
-                        }
-                    } else {
-                        return Err(Error::MalformedStackPanic);
-                    }
-                }
                 Inst::BinaryOp(typ) => {
                     let rhs = self.pop_stack()?;
                     let lhs = self.pop_stack()?;
-                    self.push_stack(match typ {
-                        TokenType::OpAdd => lhs.op_add(&rhs)?,
-                        TokenType::OpSub => lhs.op_sub(&rhs)?,
-                        TokenType::OpMul => lhs.op_mul(&rhs)?,
-                        TokenType::OpDiv => lhs.op_div(&rhs)?,
-                        TokenType::OpRem => lhs.op_rem(&rhs)?,
-                        TokenType::OpEq => lhs.op_eq(&rhs)?,
-                        TokenType::OpNeq => lhs.op_neq(&rhs)?,
-                        TokenType::OpGeq => lhs.op_geq(&rhs)?,
-                        TokenType::OpLeq => lhs.op_leq(&rhs)?,
-                        TokenType::OpGt => lhs.op_gt(&rhs)?,
-                        TokenType::OpLt => lhs.op_lt(&rhs)?,
-                        TokenType::OpFeed => lhs.op_feed(&rhs)?,
-                        _ => unreachable!(),
-                    })?;
+                    self.push_stack(Value::op_binary(&lhs, &rhs, typ)?)?;
                 }
                 Inst::UnaryOp(typ) => {
                     let target = self.pop_stack()?;
-                    self.push_stack(match typ {
-                        TokenType::OpSub => target.op_sub_unary()?,
-                        TokenType::Bang => target.op_not_unary()?,
-                        TokenType::OpFeed => target.op_feed_unary()?,
-                        _ => unreachable!(),
-                    })?;
+                    self.push_stack(Value::op_unary(&target, typ)?)?;
                 }
                 Inst::Branch(pass_ip, fail_ip) => {
-                    // TODO guard against invalid jumps
+                    // TODO: protect against invalid or dangerous jumps
                     if self.pop_stack()?.truthy() {
                         ip = pass_ip;
                     } else {
@@ -127,15 +116,22 @@ impl VM {
                     continue;
                 }
                 Inst::Goto(new_ip) => {
+                    // TODO: protect against invalid or dangerous jumps
                     ip = new_ip;
                     continue;
                 }
-                Inst::MakeClosure(fn_argct, fn_insts, name) => {
+                Inst::MakeClosure(fn_args, fn_insts, maybe_name) => {
+                    let name = maybe_name
+                        .map_or("anonymous".into(), |name| name.clone());
                     self.push_stack(Value::Func {
-                        name: name.map_or("anonymous".into(), |name| name.clone()),
-                        argct: fn_argct,
-                        insts: fn_insts.clone(),
-                        outer: Rc::new(Scope::extend(Rc::clone(&scope))),
+                        name:   name.clone(),
+                        caller: VMState::make_caller(
+                            Rc::clone(self),
+                            name,
+                            Rc::from(fn_args),
+                            Rc::clone(&fn_insts),
+                            Rc::new(Scope::extend(Rc::clone(&scope))),
+                        ),
                     })?;
                 }
                 Inst::InitCall => {
@@ -152,35 +148,19 @@ impl VM {
                 }
                 Inst::FinishCall => {
                     let target = self.pop_stack()?;
-                    match target {
-                        Value::Func { insts, outer, .. } => {
-                            self.run_frame(
-                                insts,
-                                Rc::new(Scope::extend(outer)),
-                                self.get_return_sp()?,
-                            )?;
+                    if let Value::Int(argct) = self.pop_stack()? {
+                        if argct < 0 {
+                            return Err(Error::MalformedStackPanic);
                         }
-                        Value::NativeFunc { fnptr, .. } => {
-                            if let Value::Int(argct) = self.pop_stack()? {
-                                if argct < 0 {
-                                    return Err(Error::MalformedStackPanic);
-                                }
-                                let mut args = Vec::<Value>::with_capacity(argct as usize);
-                                for _ in 0..argct {
-                                    args.push(self.pop_stack()?);
-                                }
-                                args.reverse();
-                                self.push_stack(fnptr(args)?)?;
-                            } else {
-                                return Err(Error::MalformedStackPanic);
-                            }
+                        let mut args =
+                            Vec::<Value>::with_capacity(argct as usize);
+                        for _ in 0..argct {
+                            args.push(self.pop_stack()?);
                         }
-                        _ => {
-                            return Err(Error::InvalidOperation(format!(
-                                "can't call {:?}",
-                                target
-                            )));
-                        }
+                        args.reverse();
+                        self.push_stack(target.call(args)?)?;
+                    } else {
+                        return Err(Error::MalformedStackPanic);
                     }
                 }
                 Inst::Return => {
@@ -189,7 +169,9 @@ impl VM {
                 }
                 Inst::BuildObject => {
                     if let Value::Int(field_count) = self.pop_stack()? {
-                        let mut obj = HashMap::<String, Value>::with_capacity(field_count as usize);
+                        let mut obj = HashMap::<String, Value>::with_capacity(
+                            field_count as usize,
+                        );
                         for _ in 0..field_count {
                             let val = self.pop_stack()?;
                             let key = self.pop_stack()?;
@@ -212,7 +194,9 @@ impl VM {
                     target.op_index_set(&index, &value)?;
                 }
                 Inst::Throw => {
-                    return Err(Error::RuntimeError(self.pop_stack()?.to_string()));
+                    return Err(Error::RuntimeError(
+                        self.pop_stack()?.to_string(),
+                    ));
                 }
             }
             ip += 1;
@@ -222,11 +206,7 @@ impl VM {
         Ok(())
     }
 
-    pub fn run(&self) -> Result<(), Error> {
-        self.run_frame(self.insts.clone(), self.root_scope.clone(), 0)
-    }
-
-    fn get_return_sp(&self) -> Result<usize, Error> {
+    fn get_return_sp(self: &Rc<Self>) -> Result<usize, Error> {
         let stack = self.stack.borrow();
         let size = stack.len();
         let last = stack.last();
@@ -235,5 +215,29 @@ impl VM {
         } else {
             Err(Error::MalformedStackPanic)
         }
+    }
+
+    fn make_caller(
+        state: Rc<Self>,
+        _name: String,
+        arg_names: Rc<[String]>,
+        insts: Rc<[Inst]>,
+        outer: Rc<Scope>,
+    ) -> Rc<dyn Fn(Vec<Value>) -> Result<Value, Error>> {
+        Rc::new(move |args| -> Result<Value, Error> {
+            if args.len() != arg_names.len() {
+                return Err(Error::ArgumentError(format!(
+                    "wrong number of arguments: expected {}, got {}",
+                    arg_names.len(),
+                    args.len()
+                )));
+            }
+            let scope = Rc::new(Scope::extend(Rc::clone(&outer)));
+            for (i, arg) in args.into_iter().enumerate() {
+                scope.declare(arg_names[i].clone(), arg);
+            }
+            state.run_frame(Rc::clone(&insts), scope)?;
+            state.pop_stack()
+        })
     }
 }

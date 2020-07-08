@@ -1,17 +1,24 @@
-use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
-use std::ops::Deref;
-use std::rc::Rc;
+use std::{
+    fmt::{
+        Debug,
+        Display,
+        Formatter,
+        Result as FmtResult,
+    },
+    ops::Deref,
+    rc::Rc,
+};
 
 pub struct Code {
     pub raw: Rc<[char]>,
-    offset: usize,
-    length: usize,
+    offset:  usize,
+    length:  usize,
 }
 
 impl Clone for Code {
     fn clone(&self) -> Self {
         Code {
-            raw: Rc::clone(&self.raw),
+            raw:    Rc::clone(&self.raw),
             offset: self.offset,
             length: self.length,
         }
@@ -44,7 +51,7 @@ where
         let chars = src.as_ref().chars().collect::<Vec<char>>();
         let char_count = chars.len();
         Code {
-            raw: Rc::from(chars),
+            raw:    Rc::from(chars),
             offset: 0,
             length: char_count,
         }
@@ -88,15 +95,9 @@ pub struct Pos {
 }
 
 impl Pos {
-    pub fn span(offset: usize, length: usize) -> Self {
-        Pos { offset, length }
-    }
+    pub fn span(offset: usize, length: usize) -> Self { Pos { offset, length } }
 
-    pub fn one(offset: usize) -> Self {
-        Pos { offset, length: 1 }
-    }
+    pub fn one(offset: usize) -> Self { Pos { offset, length: 1 } }
 
-    pub fn mark(offset: usize) -> Self {
-        Pos { offset, length: 0 }
-    }
+    pub fn mark(offset: usize) -> Self { Pos { offset, length: 0 } }
 }

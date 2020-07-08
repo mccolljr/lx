@@ -1,6 +1,12 @@
-use super::source::Pos;
-use super::token::TokenType;
-use std::fmt::{Display, Formatter, Result as FmtResult};
+use super::{
+    source::Pos,
+    token::TokenType,
+};
+use std::fmt::{
+    Display,
+    Formatter,
+    Result as FmtResult,
+};
 
 pub trait Node {
     fn pos(&self) -> Pos;
@@ -10,9 +16,9 @@ pub trait Node {
 pub struct IfBlock {
     pub kw_typ: TokenType,
     pub kw_pos: Pos,
-    pub cond: Box<Expr>,
+    pub cond:   Box<Expr>,
     pub obrace: Pos,
-    pub body: Vec<Stmt>,
+    pub body:   Vec<Stmt>,
     pub cbrace: Pos,
 }
 
@@ -20,49 +26,49 @@ pub struct IfBlock {
 pub struct ElseBlock {
     pub kwelse: Pos,
     pub obrace: Pos,
-    pub body: Vec<Stmt>,
+    pub body:   Vec<Stmt>,
     pub cbrace: Pos,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FnArg {
-    pub pos: Pos,
+    pub pos:  Pos,
     pub name: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ObjField {
-    pub key: Box<Expr>,
+    pub key:   Box<Expr>,
     pub colon: Pos,
-    pub val: Box<Expr>,
+    pub val:   Box<Expr>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
     Let {
-        kwlet: Pos,
-        ident_pos: Pos,
+        kwlet:      Pos,
+        ident_pos:  Pos,
         ident_name: String,
-        assign: Pos,
-        expr: Box<Expr>,
-        semi: Pos,
+        assign:     Pos,
+        expr:       Box<Expr>,
+        semi:       Pos,
     },
     FnDef {
-        kwfn: Pos,
-        ident_pos: Pos,
+        kwfn:       Pos,
+        ident_pos:  Pos,
         ident_name: String,
-        oparen: Pos,
-        args: Vec<FnArg>,
-        cparen: Pos,
-        obrace: Pos,
-        body: Vec<Stmt>,
-        cbrace: Pos,
+        oparen:     Pos,
+        args:       Vec<FnArg>,
+        cparen:     Pos,
+        obrace:     Pos,
+        body:       Vec<Stmt>,
+        cbrace:     Pos,
     },
     Assignment {
-        lhs: Box<Expr>,
+        lhs:    Box<Expr>,
         assign: Pos,
-        rhs: Box<Expr>,
-        semi: Pos,
+        rhs:    Box<Expr>,
+        semi:   Pos,
     },
     If {
         head: Vec<IfBlock>,
@@ -74,13 +80,13 @@ pub enum Stmt {
     },
     Return {
         kwreturn: Pos,
-        expr: Box<Expr>,
-        semi: Pos,
+        expr:     Box<Expr>,
+        semi:     Pos,
     },
     Throw {
         kwthrow: Pos,
-        error: Box<Expr>,
-        semi: Pos,
+        error:   Box<Expr>,
+        semi:    Pos,
     },
 }
 
@@ -90,7 +96,9 @@ impl Display for Stmt {
             Stmt::Let {
                 ident_name, expr, ..
             } => write!(f, "let {} = {};", ident_name, expr),
-            Stmt::Assignment { lhs, rhs, .. } => write!(f, "{} = {};", lhs, rhs),
+            Stmt::Assignment { lhs, rhs, .. } => {
+                write!(f, "{} = {};", lhs, rhs)
+            }
             Stmt::FnDef {
                 ident_name,
                 args,
@@ -213,9 +221,9 @@ pub enum Expr {
         val: String,
     },
     LitArr {
-        osquare: Pos,
+        osquare:  Pos,
         elements: Vec<Expr>,
-        csquare: Pos,
+        csquare:  Pos,
     },
     LitObj {
         obrace: Pos,
@@ -223,56 +231,56 @@ pub enum Expr {
         cbrace: Pos,
     },
     LitFunc {
-        kwfn: Pos,
+        kwfn:   Pos,
         oparen: Pos,
-        args: Vec<FnArg>,
+        args:   Vec<FnArg>,
         cparen: Pos,
         obrace: Pos,
-        body: Vec<Stmt>,
+        body:   Vec<Stmt>,
         cbrace: Pos,
     },
     Ident {
-        pos: Pos,
+        pos:  Pos,
         name: String,
     },
     Paren {
         oparen: Pos,
-        expr: Box<Expr>,
+        expr:   Box<Expr>,
         cparen: Pos,
     },
     Unary {
         op_pos: Pos,
         op_typ: TokenType,
-        expr: Box<Expr>,
+        expr:   Box<Expr>,
     },
     Binary {
-        lhs: Box<Expr>,
+        lhs:    Box<Expr>,
         op_pos: Pos,
         op_typ: TokenType,
-        rhs: Box<Expr>,
+        rhs:    Box<Expr>,
     },
     Ternary {
-        cond: Box<Expr>,
+        cond:     Box<Expr>,
         question: Pos,
-        pass: Box<Expr>,
-        colon: Pos,
-        fail: Box<Expr>,
+        pass:     Box<Expr>,
+        colon:    Pos,
+        fail:     Box<Expr>,
     },
     Call {
-        expr: Box<Expr>,
+        expr:   Box<Expr>,
         oparen: Pos,
-        args: Vec<Expr>,
+        args:   Vec<Expr>,
         cparen: Pos,
     },
     Index {
-        expr: Box<Expr>,
+        expr:    Box<Expr>,
         osquare: Pos,
-        index: Box<Expr>,
+        index:   Box<Expr>,
         csquare: Pos,
     },
     Selector {
-        expr: Box<Expr>,
-        dot: Pos,
+        expr:    Box<Expr>,
+        dot:     Pos,
         element: Box<Expr>,
     },
 }
@@ -339,7 +347,9 @@ impl Display for Expr {
                 cond, pass, fail, ..
             } => write!(f, "({} ? {} : {})", cond, pass, fail),
             Expr::Index { expr, index, .. } => write!(f, "{}[{}]", expr, index),
-            Expr::Selector { expr, element, .. } => write!(f, "{}.{}", expr, element),
+            Expr::Selector { expr, element, .. } => {
+                write!(f, "{}.{}", expr, element)
+            }
         }
     }
 }
@@ -449,7 +459,9 @@ impl Expr {
             Expr::Ternary {
                 cond, pass, fail, ..
             } => {
-                return cond.is_const_lit() && pass.is_const_lit() && fail.is_const_lit();
+                return cond.is_const_lit()
+                    && pass.is_const_lit()
+                    && fail.is_const_lit();
             }
             Expr::LitFunc { .. } => false,
             Expr::Ident { .. } => false,

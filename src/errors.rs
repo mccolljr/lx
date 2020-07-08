@@ -8,8 +8,8 @@ pub enum Error {
     },
 
     UnexpectedCharacter {
-        at: Pos,
-        ch: char,
+        at:      Pos,
+        ch:      char,
         context: &'static str,
     },
 
@@ -23,24 +23,24 @@ pub enum Error {
     },
 
     Expected {
-        at: Pos,
+        at:     Pos,
         wanted: String,
-        found: String,
+        found:  String,
     },
 
     InvalidAssignment {
-        at: Pos,
+        at:    Pos,
         found: String,
     },
 
     Redeclaration {
-        at: Pos,
+        at:       Pos,
         original: Pos,
-        name: String,
+        name:     String,
     },
 
     Undeclared {
-        at: Pos,
+        at:   Pos,
         name: String,
     },
 }

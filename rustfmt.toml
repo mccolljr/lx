@@ -1,0 +1,30 @@
+# widths
+max_width = 80
+comment_width = 80
+
+# comments
+wrap_comments = true
+
+# spacing
+# blank_lines_lower_bound = 0
+# blank_lines_upper_bound = 1
+enum_discrim_align_threshold = 20
+struct_field_align_threshold = 20
+
+# misc
+combine_control_expr = false
+fn_single_line = true
+force_multiline_blocks = true
+format_code_in_doc_comments = true
+format_macro_matchers = true
+format_strings = true
+# imports_layout = "Mixed"
+imports_layout = "Vertical"
+merge_imports = true
+normalize_comments = true
+normalize_doc_attributes = true
+overflow_delimited_expr = true
+reorder_impl_items = true
+reorder_imports = true
+reorder_modules = true
+use_field_init_shorthand = true

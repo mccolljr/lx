@@ -9,58 +9,65 @@ mod token;
 
 fn main() {
     use compiler::compile;
-    use runtime::error::Error;
-    use runtime::value::Value;
-    use runtime::vm::VM;
+    use runtime::{
+        error::Error,
+        value::Value,
+        vm::VM,
+    };
 
     let vm = VM::new(
         compile(
             "
-            let a = 1 + 2 + 3 + 4 + 5 + 6 + 7;
-            let b = 'a' + 'b';
-            print(a, b);
+            let fib = (fn() {
+                let cache = { '0': 0, '1': 1 };
+                let _fib = fn(n) {
+                    if n % 1 != 0 {
+                        throw 'can only call fib with integer';
+                    }
+                    let result = cache[n];
+                    if result == null {
+                        result = _fib(n-2) + _fib(n-1);
+                        cache[n] = result;
+                    }
+                    return result;
+                };
+                return _fib;
+            })();
+            print(do(fn() { return 10; }, fib, fib));
             ",
         )
         .expect("compilation error"),
     )
-    .with_global(
-        "print",
-        Value::NativeFunc {
-            name: "print".into(),
-            fnptr: |args| {
-                for (i, v) in args.iter().enumerate() {
-                    if i > 0 {
-                        print!(" ");
-                    }
-                    print!("{}", v.to_string());
+    .with_global("print", Value::NativeFunc {
+        name:  "print".into(),
+        fnptr: |args| {
+            for (i, v) in args.iter().enumerate() {
+                if i > 0 {
+                    print!(" ");
                 }
-                print!("\n");
-                Ok(Value::Null)
-            },
+                print!("{}", v.to_string());
+            }
+            print!("\n");
+            Ok(Value::Null)
         },
-    )
-    .with_global(
-        "abs",
-        Value::NativeFunc {
-            name: "abs".into(),
-            fnptr: |args| {
-                if args.len() != 1 {
-                    return Err(Error::ArgumentError(format!(
-                        "wrong number of arguments: expected 1, got {}",
-                        args.len()
-                    )));
+    })
+    .with_global("do", Value::NativeFunc {
+        name:  "do".into(),
+        fnptr: |args| {
+            let mut prev: Option<Value> = None;
+            for arg in args {
+                if let Some(v) = prev {
+                    prev = Some(arg.call(vec![v])?);
+                } else {
+                    prev = Some(arg.call(vec![])?);
                 }
-                let arg = &args[0];
-                match arg {
-                    Value::Int(v) => Ok(Value::Int(v.abs())),
-                    _ => Err(Error::RuntimeError(format!("argument must be an integer"))),
-                }
-            },
+            }
+            Ok(prev.map_or(Value::Null, |v| v))
         },
-    );
+    });
     let result = vm.run();
     match result {
-        Ok(_) => println!("OK! {:?}", vm),
+        Ok(_) => println!("OK!\n\n{:?}", vm),
         Err(e) => println!("ERROR! {:?}\n\n{:?}", e, vm),
     }
 }
