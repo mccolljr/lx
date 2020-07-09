@@ -90,7 +90,7 @@ fn const_val(x: &Expr) -> Option<Value> {
     }
 }
 
-fn const_truthy(x: &Expr) -> Option<bool> {
+pub fn const_truthy(x: &Expr) -> Option<bool> {
     match x {
         Expr::LitFunc { .. } => Some(true),
         Expr::LitArr { elements, .. } => Some(elements.len() != 0),

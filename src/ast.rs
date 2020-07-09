@@ -50,11 +50,31 @@ pub enum ObjKey {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum AssignTarget {
+    Ident(String),
+    Index(Box<Expr>, Box<Expr>),
+    Select(Box<Expr>, String),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum LetTarget {
+    Ident(String),
+    ArrDestruct(Vec<String>),
+    ObjDestruct(Vec<ObjDestructItem>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ObjDestructItem {
+    Name(String),
+    NameMap(String, String),
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
     Let {
         kwlet:      Pos,
-        ident_pos:  Pos,
-        ident_name: String,
+        target:     LetTarget,
+        target_pos: Pos,
         assign:     Pos,
         expr:       Box<Expr>,
         semi:       Pos,
@@ -72,10 +92,11 @@ pub enum Stmt {
         is_closure: bool,
     },
     Assignment {
-        lhs:    Box<Expr>,
-        assign: Pos,
-        rhs:    Box<Expr>,
-        semi:   Pos,
+        target_pos: Pos,
+        target:     AssignTarget,
+        assign:     Pos,
+        rhs:        Box<Expr>,
+        semi:       Pos,
     },
     If {
         head: Vec<IfBlock>,
@@ -100,11 +121,52 @@ pub enum Stmt {
 impl Display for Stmt {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         match self {
-            Stmt::Let {
-                ident_name, expr, ..
-            } => write!(f, "let {} = {};", ident_name, expr),
-            Stmt::Assignment { lhs, rhs, .. } => {
-                write!(f, "{} = {};", lhs, rhs)
+            Stmt::Let { target, expr, .. } => {
+                match target {
+                    LetTarget::Ident(name) => {
+                        write!(f, "let {} = {};", name, expr)
+                    }
+                    LetTarget::ArrDestruct(names) => {
+                        write!(f, "let [")?;
+                        for (i, name) in names.iter().enumerate() {
+                            if i > 0 {
+                                write!(f, ", ")?;
+                            }
+                            write!(f, "{}", name)?;
+                        }
+                        write!(f, "] = {};", expr)
+                    }
+                    LetTarget::ObjDestruct(items) => {
+                        write!(f, "let {{")?;
+                        for (i, item) in items.iter().enumerate() {
+                            if i > 0 {
+                                write!(f, ", ")?;
+                            }
+                            match item {
+                                ObjDestructItem::Name(name) => {
+                                    write!(f, "{}", name)?
+                                }
+                                ObjDestructItem::NameMap(key, name) => {
+                                    write!(f, "{:?}: {}", key, name)?
+                                }
+                            }
+                        }
+                        write!(f, "}} = {};", expr)
+                    }
+                }
+            }
+            Stmt::Assignment { target, rhs, .. } => {
+                match target {
+                    AssignTarget::Ident(name) => {
+                        write!(f, "{} = {};", name, rhs)
+                    }
+                    AssignTarget::Index(item, index) => {
+                        write!(f, "{}[{}] = {};", item, index, rhs)
+                    }
+                    AssignTarget::Select(item, name) => {
+                        write!(f, "{}.{} = {};", item, name, rhs)
+                    }
+                }
             }
             Stmt::FnDef {
                 ident_name,
@@ -169,8 +231,10 @@ impl Node for Stmt {
                 let end = cbrace.offset + cbrace.length;
                 Pos::span(start, end - start)
             }
-            Stmt::Assignment { lhs, semi, .. } => {
-                let start = lhs.pos().offset;
+            Stmt::Assignment {
+                target_pos, semi, ..
+            } => {
+                let start = target_pos.offset;
                 let end = semi.offset + semi.length;
                 Pos::span(start, end - start)
             }
@@ -444,12 +508,24 @@ impl Node for Expr {
 }
 
 impl Expr {
-    pub fn is_assignable(&self) -> bool {
+    pub fn get_assign_target(&self) -> Option<(AssignTarget, Pos)> {
         match self {
-            Expr::Ident { .. } | Expr::Index { .. } | Expr::Selector { .. } => {
-                true
+            Expr::Ident { name, .. } => {
+                Some((AssignTarget::Ident(name.clone()), self.pos()))
             }
-            _ => false,
+            Expr::Index { expr, index, .. } => {
+                Some((
+                    AssignTarget::Index(expr.clone(), index.clone()),
+                    self.pos(),
+                ))
+            }
+            Expr::Selector { expr, elt_name, .. } => {
+                Some((
+                    AssignTarget::Select(expr.clone(), elt_name.clone()),
+                    self.pos(),
+                ))
+            }
+            _ => None,
         }
     }
 }

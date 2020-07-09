@@ -1,4 +1,5 @@
 use super::{
+    super::ast::ObjDestructItem,
     error::Error,
     inst::Inst,
     scope::Scope,
@@ -93,17 +94,56 @@ impl VMState {
                 Inst::PopStack() => {
                     self.pop_stack()?;
                 }
-                Inst::PushStack(ref v) => {
-                    self.push_stack(v.clone())?;
+                Inst::PushStack(v) => {
+                    self.push_stack(v)?;
                 }
-                Inst::LoadNamed(ref name) => {
-                    self.push_stack(scope.get(name))?;
+                Inst::LoadNamed(name) => {
+                    self.push_stack(scope.get(&name))?;
                 }
-                Inst::StoreNamed(ref name) => {
-                    scope.set(name.clone(), self.pop_stack()?);
+                Inst::StoreNamed(name) => {
+                    scope.set(name, self.pop_stack()?);
                 }
-                Inst::DeclareNamed(ref name) => {
-                    scope.declare(name.clone(), self.pop_stack()?);
+                Inst::DeclareNamed(name) => {
+                    scope.declare(name, self.pop_stack()?);
+                }
+                Inst::ArrDestruct(names) => {
+                    let source = self.pop_stack()?;
+                    if let Value::Array(arr) = source {
+                        for (i, name) in names.iter().enumerate() {
+                            scope.declare(name.clone(), arr.index_get(i));
+                        }
+                    } else {
+                        return Err(Error::InvalidOperation(format!(
+                            "can't destructure {:?} as an array",
+                            source
+                        )));
+                    }
+                }
+                Inst::ObjDestruct(items) => {
+                    let source = self.pop_stack()?;
+                    if let Value::Object(obj) = source {
+                        for item in items.iter() {
+                            match item {
+                                ObjDestructItem::Name(name) => {
+                                    scope.declare(
+                                        name.clone(),
+                                        obj.index_get(name),
+                                    );
+                                }
+                                ObjDestructItem::NameMap(key, name) => {
+                                    scope.declare(
+                                        name.clone(),
+                                        obj.index_get(key),
+                                    );
+                                }
+                            }
+                        }
+                    } else {
+                        return Err(Error::InvalidOperation(format!(
+                            "can't destructure {:?} as an object",
+                            source
+                        )));
+                    }
                 }
                 Inst::BinaryOp(typ) => {
                     let rhs = self.pop_stack()?;

@@ -15,7 +15,9 @@ use crate::ast::{
     Expr,
     FnArg,
     IfBlock,
+    LetTarget,
     Node,
+    ObjDestructItem,
     ObjField,
     ObjKey,
     Stmt,
@@ -127,45 +129,113 @@ impl Parser {
     fn parse_let_stmt(&mut self) -> Result<Stmt, Error> {
         self.expect(TokenType::KwLet)?;
         let kwlet = self.cur_t.pos;
-        let ident = self.expect(TokenType::Ident)?;
-        let ident_pos = ident.pos;
-        self.scope.declare(ident.lit.clone(), ident_pos)?;
-        let ident_name = ident.lit.clone();
+        let (target, target_pos) = self.parse_let_target()?;
         let assign = self.expect(TokenType::Assign)?.pos;
         let expr = Box::new(self.parse_expr(0)?);
         let semi = self.expect(TokenType::Semi)?.pos;
-        if let Expr::LitFunc {
-            kwfn,
-            oparen,
-            args,
-            cparen,
-            obrace,
-            cbrace,
-            body,
-            is_closure,
-        } = *expr.clone()
-        {
-            Ok(Stmt::FnDef {
-                ident_name,
-                ident_pos,
-                kwfn,
-                oparen,
-                args,
-                cparen,
-                obrace,
-                body,
-                cbrace,
-                is_closure,
-            })
-        } else {
-            Ok(Stmt::Let {
-                kwlet,
-                ident_pos,
-                ident_name,
-                assign,
-                expr,
-                semi,
-            })
+        Ok(Stmt::Let {
+            kwlet,
+            target,
+            target_pos,
+            assign,
+            expr,
+            semi,
+        })
+    }
+
+    fn parse_let_target(&mut self) -> Result<(LetTarget, Pos), Error> {
+        match self.peek_t.typ {
+            TokenType::Ident => {
+                let Token { lit: name, pos, .. } =
+                    self.expect(TokenType::Ident)?;
+                self.scope.declare(name.clone(), pos)?;
+                Ok((LetTarget::Ident(name), pos))
+            }
+            TokenType::OSquare => {
+                self.advance()?;
+                let start = self.cur_t.pos.offset;
+                let mut names = Vec::<String>::new();
+                while self.peek_t.typ != TokenType::CSquare {
+                    if names.len() > 0 {
+                        self.expect(TokenType::Comma)?;
+                    }
+                    let Token { lit: name, pos, .. } =
+                        self.expect(TokenType::Ident)?;
+                    self.scope.declare(name.clone(), pos)?;
+                    names.push(name);
+                }
+                let end_pos = self.expect(TokenType::CSquare)?.pos;
+                let end = end_pos.offset + end_pos.length;
+                Ok((
+                    LetTarget::ArrDestruct(names),
+                    Pos::span(start, end - start),
+                ))
+            }
+            TokenType::OBrace => {
+                self.advance()?;
+                let start = self.cur_t.pos.offset;
+                let mut items = Vec::<ObjDestructItem>::new();
+                while self.peek_t.typ != TokenType::CBrace {
+                    if items.len() > 0 {
+                        self.expect(TokenType::Comma)?;
+                    }
+                    items.push(self.parse_object_destruct_item()?);
+                }
+                let end_pos = self.expect(TokenType::CBrace)?.pos;
+                let end = end_pos.offset + end_pos.length;
+                Ok((
+                    LetTarget::ObjDestruct(items),
+                    Pos::span(start, end - start),
+                ))
+            }
+            _ => {
+                Err(Error::Expected {
+                    at:     self.peek_t.pos,
+                    wanted: "ident, array destructure, or object destructure"
+                        .into(),
+                    found:  format!("{}", self.peek_t.typ),
+                })
+            }
+        }
+    }
+
+    fn parse_object_destruct_item(&mut self) -> Result<ObjDestructItem, Error> {
+        match self.peek_t.typ {
+            TokenType::Ident => {
+                // can be Name or NameMap
+                let Token {
+                    lit: name_or_key,
+                    pos,
+                    ..
+                } = self.expect(TokenType::Ident)?;
+
+                if self.peek_t.typ == TokenType::Colon {
+                    self.advance()?;
+                    let Token { pos, lit: name, .. } =
+                        self.expect(TokenType::Ident)?;
+                    self.scope.declare(name.clone(), pos)?;
+                    return Ok(ObjDestructItem::NameMap(name_or_key, name));
+                }
+                self.scope.declare(name_or_key.clone(), pos)?;
+                Ok(ObjDestructItem::Name(name_or_key))
+            }
+            TokenType::LitString => {
+                // can only be NameMap
+                self.advance()?;
+                let key = self.cur_t.lit.clone();
+                self.expect(TokenType::Colon)?;
+                let Token { pos, lit: name, .. } =
+                    self.expect(TokenType::Ident)?;
+                self.scope.declare(name.clone(), pos)?;
+                Ok(ObjDestructItem::NameMap(key, name))
+            }
+            _ => {
+                Err(Error::Expected {
+                    at:     self.peek_t.pos,
+                    wanted: "object destrucruting item".into(),
+                    found:  format!("{}", self.peek_t.typ),
+                })
+            }
         }
     }
 
@@ -257,17 +327,18 @@ impl Parser {
     fn parse_expr_or_assignment_stmt(&mut self) -> Result<Stmt, Error> {
         let x = self.parse_expr(0)?;
         if self.peek_t.typ == TokenType::Assign {
-            if !x.is_assignable() {
-                return Err(Error::InvalidAssignment {
-                    at:    x.pos(),
-                    found: format!("{}", x),
+            if let Some((target, target_pos)) = x.get_assign_target() {
+                return Ok(Stmt::Assignment {
+                    target,
+                    target_pos,
+                    assign: self.expect(TokenType::Assign)?.pos,
+                    rhs: Box::new(self.parse_expr(0)?),
+                    semi: self.expect(TokenType::Semi)?.pos,
                 });
             }
-            return Ok(Stmt::Assignment {
-                lhs:    Box::new(x),
-                assign: self.expect(TokenType::Assign)?.pos,
-                rhs:    Box::new(self.parse_expr(0)?),
-                semi:   self.expect(TokenType::Semi)?.pos,
+            return Err(Error::InvalidAssignment {
+                at:    x.pos(),
+                found: format!("{}", x),
             });
         }
         Ok(Stmt::Expr {

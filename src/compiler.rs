@@ -1,7 +1,9 @@
 use super::{
     ast::{
+        AssignTarget,
         Expr,
         FnArg,
+        LetTarget,
         ObjKey,
         Stmt,
     },
@@ -23,11 +25,19 @@ fn compile_stmt(insts: &mut Vec<Inst>, stmt: Stmt) {
             compile_expr(insts, simplify_expr(*expr));
             insts.push(Inst::PopStack());
         }
-        Stmt::Let {
-            ident_name, expr, ..
-        } => {
+        Stmt::Let { target, expr, .. } => {
             compile_expr(insts, simplify_expr(*expr));
-            insts.push(Inst::DeclareNamed(ident_name.clone()));
+            match target {
+                LetTarget::Ident(name) => {
+                    insts.push(Inst::DeclareNamed(name));
+                }
+                LetTarget::ArrDestruct(names) => {
+                    insts.push(Inst::ArrDestruct(Rc::from(names)));
+                }
+                LetTarget::ObjDestruct(items) => {
+                    insts.push(Inst::ObjDestruct(Rc::from(items)));
+                }
+            }
         }
         Stmt::FnDef {
             ident_name,
@@ -45,25 +55,24 @@ fn compile_stmt(insts: &mut Vec<Inst>, stmt: Stmt) {
             );
             insts.push(Inst::DeclareNamed(ident_name.clone()));
         }
-        Stmt::Assignment { lhs, rhs, .. } => {
-            match *lhs {
-                Expr::Ident { name, .. } => {
+        Stmt::Assignment { target, rhs, .. } => {
+            match target {
+                AssignTarget::Ident(name) => {
                     compile_expr(insts, simplify_expr(*rhs));
                     insts.push(Inst::StoreNamed(name.clone()));
                 }
-                Expr::Index { expr, index, .. } => {
+                AssignTarget::Index(expr, index) => {
                     compile_expr(insts, simplify_expr(*expr));
                     compile_expr(insts, simplify_expr(*index));
                     compile_expr(insts, simplify_expr(*rhs));
                     insts.push(Inst::IndexSet);
                 }
-                Expr::Selector { expr, elt_name, .. } => {
+                AssignTarget::Select(expr, elt_name) => {
                     compile_expr(insts, simplify_expr(*expr));
                     insts.push(Inst::PushStack(Value::from(elt_name)));
                     compile_expr(insts, simplify_expr(*rhs));
                     insts.push(Inst::IndexSet);
                 }
-                _ => unreachable!(),
             };
         }
         Stmt::If { head, tail } => {

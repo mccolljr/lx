@@ -1,5 +1,8 @@
 use super::{
-    super::token::TokenType,
+    super::{
+        ast::ObjDestructItem,
+        token::TokenType,
+    },
     value::Value,
 };
 use std::rc::Rc;
@@ -12,6 +15,8 @@ pub enum Inst {
     LoadNamed(String),
     StoreNamed(String),
     DeclareNamed(String),
+    ArrDestruct(Rc<[String]>),
+    ObjDestruct(Rc<[ObjDestructItem]>),
     BinaryOp(TokenType),
     UnaryOp(TokenType),
     Branch(usize, usize),

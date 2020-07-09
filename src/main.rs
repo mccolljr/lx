@@ -21,25 +21,11 @@ fn main() {
     let vm = VM::new(
         compile(
             "
-            let fib = fn() {
-                let cache = {'0': 0, '1': 1};
-                let _fib = fn (n) {
-                    if n < 0 {
-                        throw 'n cannot be negative';
-                    }
-                    if n % 1 != 0 {
-                        throw 'n cannot be a float';
-                    }
-                    let result = cache[n];
-                    if result == null {
-                        result = _fib(n-1) + _fib(n-2);
-                        cache[n] = result; 
-                    }
-                    return result;
-                };
-                return _fib;
-            } ();
-            print(fib(100));
+            fn make_arr() {
+                return [1,2,3];
+            }
+            let [ a, b, c ] = make_arr();
+            print(a,b,c);
             ",
         )
         .expect("compilation error"),
@@ -73,7 +59,7 @@ fn main() {
     );
     let result = vm.run();
     match result {
-        Ok(_) => println!("OK!\n\n{:#?}", vm),
-        Err(e) => println!("ERROR! {:?}\n\n{:#?}", e, vm),
+        Ok(_) => println!("{:#?}\n\nOK!", vm),
+        Err(e) => println!("{:#?}\n\nERROR! {:?}", vm, e),
     }
 }
