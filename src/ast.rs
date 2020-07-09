@@ -38,9 +38,15 @@ pub struct FnArg {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ObjField {
-    pub key:   Box<Expr>,
+    pub key:   ObjKey,
     pub colon: Pos,
     pub val:   Box<Expr>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ObjKey {
+    Static(String, Pos),
+    Dynamic(Box<Expr>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -63,6 +69,7 @@ pub enum Stmt {
         obrace:     Pos,
         body:       Vec<Stmt>,
         cbrace:     Pos,
+        is_closure: bool,
     },
     Assignment {
         lhs:    Box<Expr>,
@@ -231,13 +238,14 @@ pub enum Expr {
         cbrace: Pos,
     },
     LitFunc {
-        kwfn:   Pos,
-        oparen: Pos,
-        args:   Vec<FnArg>,
-        cparen: Pos,
-        obrace: Pos,
-        body:   Vec<Stmt>,
-        cbrace: Pos,
+        kwfn:       Pos,
+        oparen:     Pos,
+        args:       Vec<FnArg>,
+        cparen:     Pos,
+        obrace:     Pos,
+        body:       Vec<Stmt>,
+        cbrace:     Pos,
+        is_closure: bool,
     },
     Ident {
         pos:  Pos,
@@ -310,7 +318,19 @@ impl Display for Expr {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{}: {}", field.key, field.val)?;
+                    match &field.key {
+                        ObjKey::Static(name, ..) => {
+                            write!(f, "{:?}: {}", name, field.val)?;
+                        }
+                        ObjKey::Dynamic(expr) => {
+                            match expr.as_ref() {
+                                Expr::Paren { .. } => {
+                                    write!(f, "{}: {}", expr, field.val)?
+                                }
+                                _ => write!(f, "({}): {}", expr, field.val)?,
+                            }
+                        }
+                    }
                 }
                 write!(f, "}}")
             }
@@ -430,45 +450,6 @@ impl Expr {
                 true
             }
             _ => false,
-        }
-    }
-
-    pub fn is_const_lit(&self) -> bool {
-        match self {
-            Expr::LitNull { .. } => true,
-            Expr::LitInt { .. } => true,
-            Expr::LitFlt { .. } => true,
-            Expr::LitStr { .. } => true,
-            Expr::LitBool { .. } => true,
-            Expr::LitArr { elements, .. } => {
-                return elements.iter().all(|elt| elt.is_const_lit());
-            }
-            Expr::LitObj { fields, .. } => {
-                return fields.iter().all(|field| {
-                    return match field.key.as_ref() {
-                        Expr::LitStr { .. } => true,
-                        Expr::Ident { .. } => true,
-                        _ => false,
-                    } && field.val.is_const_lit();
-                })
-            }
-            Expr::Paren { expr, .. } => expr.is_const_lit(),
-            Expr::Unary { expr, .. } => expr.is_const_lit(),
-            Expr::Binary { lhs, rhs, .. } => {
-                return lhs.is_const_lit() && rhs.is_const_lit();
-            }
-            Expr::Ternary {
-                cond, pass, fail, ..
-            } => {
-                return cond.is_const_lit()
-                    && pass.is_const_lit()
-                    && fail.is_const_lit();
-            }
-            Expr::LitFunc { .. } => false,
-            Expr::Ident { .. } => false,
-            Expr::Call { .. } => false,
-            Expr::Index { .. } => false,
-            Expr::Selector { .. } => false,
         }
     }
 }

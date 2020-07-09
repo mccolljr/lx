@@ -17,6 +17,7 @@ use crate::ast::{
     IfBlock,
     Node,
     ObjField,
+    ObjKey,
     Stmt,
 };
 use std::{
@@ -26,8 +27,9 @@ use std::{
 };
 
 struct ParseScope {
-    parent: Option<Rc<ParseScope>>,
-    decls:  RefCell<HashMap<String, Pos>>,
+    parent:   Option<Rc<ParseScope>>,
+    decls:    RefCell<HashMap<String, Pos>>,
+    captures: RefCell<Vec<String>>,
 }
 
 impl ParseScope {
@@ -42,21 +44,12 @@ impl ParseScope {
         Rc::from(ParseScope {
             parent,
             decls: RefCell::new(HashMap::new()),
+            captures: RefCell::new(Vec::new()),
         })
     }
 
     fn get_local_decl(&self, name: &String) -> Option<Pos> {
         self.decls.borrow().get(name).map(|pos| *pos)
-    }
-
-    fn get_decl(&self, name: &String) -> Option<Pos> {
-        if let Some(decl_pos) = self.get_local_decl(name) {
-            return Some(decl_pos);
-        } else if let Some(ref parent) = self.parent {
-            parent.get_decl(name)
-        } else {
-            None
-        }
     }
 
     fn declare(&self, name: String, at: Pos) -> Result<(), Error> {
@@ -65,6 +58,28 @@ impl ParseScope {
         }
         self.decls.borrow_mut().insert(name, at);
         Ok(())
+    }
+
+    fn utilize(&self, name: &String, pos: Pos) -> Result<(), Error> {
+        if self.get_local_decl(name).is_some() {
+            // found in local scope
+            return Ok(());
+        }
+
+        if let Some(parent) = &self.parent {
+            // if the name is found several scopes up, we need to capture it in
+            // all of the intermediate scopes, too.
+            parent.utilize(name, pos)?;
+            // if we get here, it was found in or above the parent scope,
+            // and we need to capture the name
+            self.captures.borrow_mut().push(name.clone());
+            return Ok(());
+        }
+
+        Err(Error::Undeclared {
+            at:   pos,
+            name: name.clone(),
+        })
     }
 }
 
@@ -119,14 +134,39 @@ impl Parser {
         let assign = self.expect(TokenType::Assign)?.pos;
         let expr = Box::new(self.parse_expr(0)?);
         let semi = self.expect(TokenType::Semi)?.pos;
-        Ok(Stmt::Let {
-            kwlet,
-            ident_pos,
-            ident_name,
-            assign,
-            expr,
-            semi,
-        })
+        if let Expr::LitFunc {
+            kwfn,
+            oparen,
+            args,
+            cparen,
+            obrace,
+            cbrace,
+            body,
+            is_closure,
+        } = *expr.clone()
+        {
+            Ok(Stmt::FnDef {
+                ident_name,
+                ident_pos,
+                kwfn,
+                oparen,
+                args,
+                cparen,
+                obrace,
+                body,
+                cbrace,
+                is_closure,
+            })
+        } else {
+            Ok(Stmt::Let {
+                kwlet,
+                ident_pos,
+                ident_name,
+                assign,
+                expr,
+                semi,
+            })
+        }
     }
 
     fn parse_fndef_stmt(&mut self) -> Result<Stmt, Error> {
@@ -155,6 +195,7 @@ impl Parser {
             obrace,
             body,
             cbrace,
+            is_closure: !self.scope.captures.borrow().is_empty(),
         };
         self.scope = self.scope.parent.clone().unwrap();
         Ok(stmt)
@@ -346,6 +387,7 @@ impl Parser {
                     obrace,
                     body,
                     cbrace,
+                    is_closure: !self.scope.captures.borrow().is_empty(),
                 };
                 self.scope = self.scope.parent.clone().unwrap();
                 Ok(expr)
@@ -353,11 +395,8 @@ impl Parser {
             TokenType::Ident => {
                 let pos = self.cur_t.pos;
                 let name = self.cur_t.lit.clone();
-                if self.scope.get_decl(&name).is_none() {
-                    Err(Error::Undeclared { at: pos, name })
-                } else {
-                    Ok(Expr::Ident { pos, name })
-                }
+                self.scope.utilize(&name, pos)?;
+                Ok(Expr::Ident { pos, name })
             }
             TokenType::OParen => {
                 Ok(Expr::Paren {
@@ -462,33 +501,22 @@ impl Parser {
                 TokenType::OParen => {
                     self.advance()?;
                     fields.push(ObjField {
-                        key:   Box::new(Expr::Paren {
+                        key:   ObjKey::Dynamic(Box::new(Expr::Paren {
                             oparen: self.cur_t.pos,
                             expr:   Box::new(self.parse_expr(0)?),
                             cparen: self.expect(TokenType::CParen)?.pos,
-                        }),
+                        })),
                         colon: self.expect(TokenType::Colon)?.pos,
                         val:   Box::new(self.parse_expr(0)?),
                     });
                 }
-                TokenType::LitString => {
+                TokenType::LitString | TokenType::Ident => {
                     self.advance()?;
                     fields.push(ObjField {
-                        key:   Box::new(Expr::LitStr {
-                            pos: self.cur_t.pos,
-                            val: self.cur_t.lit.clone(),
-                        }),
-                        colon: self.expect(TokenType::Colon)?.pos,
-                        val:   Box::new(self.parse_expr(0)?),
-                    });
-                }
-                TokenType::Ident => {
-                    self.advance()?;
-                    fields.push(ObjField {
-                        key:   Box::new(Expr::Ident {
-                            pos:  self.cur_t.pos,
-                            name: self.cur_t.lit.clone(),
-                        }),
+                        key:   ObjKey::Static(
+                            self.cur_t.lit.clone(),
+                            self.cur_t.pos,
+                        ),
                         colon: self.expect(TokenType::Colon)?.pos,
                         val:   Box::new(self.parse_expr(0)?),
                     });
@@ -624,26 +652,28 @@ mod test {
             csquare:  pos!(2, 1),
         });
         assert_expr!("fn () {}", Expr::LitFunc {
-            kwfn:   pos!(0, 2),
-            oparen: pos!(3),
-            args:   args!(),
-            cparen: pos!(4),
-            obrace: pos!(6),
-            body:   vec![],
-            cbrace: pos!(7),
+            kwfn:       pos!(0, 2),
+            oparen:     pos!(3),
+            args:       args!(),
+            cparen:     pos!(4),
+            obrace:     pos!(6),
+            body:       vec![],
+            cbrace:     pos!(7),
+            is_closure: false,
         });
         assert_expr!("fn (a, b, c) {}", Expr::LitFunc {
-            kwfn:   pos!(0, 2),
-            oparen: pos!(3),
-            args:   args!(
+            kwfn:       pos!(0, 2),
+            oparen:     pos!(3),
+            args:       args!(
                 "a" => pos!(4),
                 "b" => pos!(7),
                 "c" => pos!(10)
             ),
-            cparen: pos!(11),
-            obrace: pos!(13),
-            body:   vec![],
-            cbrace: pos!(14),
+            cparen:     pos!(11),
+            obrace:     pos!(13),
+            body:       vec![],
+            cbrace:     pos!(14),
+            is_closure: false,
         });
         assert_expr!("a()", Expr::Call {
             expr:   expr!(Expr::Ident {

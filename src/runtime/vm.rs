@@ -3,13 +3,14 @@ use super::{
     inst::Inst,
     scope::Scope,
     value::{
+        Array,
         Func,
+        Object,
         Value,
     },
 };
 use std::{
     cell::RefCell,
-    collections::HashMap,
     rc::Rc,
 };
 
@@ -127,7 +128,12 @@ impl VMState {
                     ip = new_ip;
                     continue;
                 }
-                Inst::MakeClosure(fn_args, fn_insts, maybe_name) => {
+                Inst::MakeFunc {
+                    args: fn_args,
+                    insts: fn_insts,
+                    name: maybe_name,
+                    is_closure,
+                } => {
                     let name = maybe_name
                         .map_or("anonymous".into(), |name| name.clone());
                     self.push_stack(Value::Func(Func::new(
@@ -135,7 +141,11 @@ impl VMState {
                         Rc::clone(self),
                         Rc::from(fn_args),
                         Rc::clone(&fn_insts),
-                        Rc::new(Scope::extend(Rc::clone(&scope))),
+                        if is_closure {
+                            Some(Rc::clone(&scope))
+                        } else {
+                            None
+                        },
                     )))?;
                 }
                 Inst::InitCall => {
@@ -172,18 +182,29 @@ impl VMState {
                     break;
                 }
                 Inst::BuildObject => {
-                    if let Value::Int(field_count) = self.pop_stack()? {
-                        let mut obj = HashMap::<String, Value>::with_capacity(
-                            field_count as usize,
-                        );
-                        for _ in 0..field_count {
-                            let val = self.pop_stack()?;
-                            let key = self.pop_stack()?;
-                            obj.insert(key.to_string(), val.clone());
+                    match self.pop_stack()? {
+                        Value::Int(field_count) if field_count >= 0 => {
+                            let obj = Object::new();
+                            for _ in 0..field_count {
+                                let val = self.pop_stack()?;
+                                let key = self.pop_stack()?;
+                                obj.index_set(key.to_string(), val);
+                            }
+                            self.push_stack(Value::Object(obj))?;
                         }
-                        self.push_stack(Value::from(obj))?;
-                    } else {
-                        return Err(Error::MalformedStackPanic);
+                        _ => return Err(Error::MalformedStackPanic),
+                    }
+                }
+                Inst::BuildArray => {
+                    match self.pop_stack()? {
+                        Value::Int(element_count) if element_count >= 0 => {
+                            let arr = Array::new();
+                            for _ in 0..element_count {
+                                arr.push_back(self.pop_stack()?);
+                            }
+                            self.push_stack(Value::Array(arr))?;
+                        }
+                        _ => return Err(Error::MalformedStackPanic),
                     }
                 }
                 Inst::Index => {

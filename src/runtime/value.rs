@@ -163,7 +163,12 @@ impl Value {
     pub fn op_add(&self, rhs: &Value) -> Result<Value, Error> {
         use Value::*;
         match (self, rhs) {
-            (Int(left), Int(right)) => Ok(Int(left + right)),
+            (Int(left), Int(right)) => {
+                left.checked_add(*right).map_or(
+                    Err(Error::InvalidOperation("integer overflow".into())),
+                    |i| Ok(Int(i)),
+                )
+            }
             (Flt(left), Flt(right)) => Ok(Flt(left + right)),
             (Int(left), Flt(right)) => Ok(Flt(*left as f64 + right)),
             (Flt(left), Int(right)) => Ok(Flt(left + *right as f64)),
@@ -181,7 +186,12 @@ impl Value {
     pub fn op_sub(&self, rhs: &Value) -> Result<Value, Error> {
         use Value::*;
         match (self, rhs) {
-            (Int(left), Int(right)) => Ok(Int(left - right)),
+            (Int(left), Int(right)) => {
+                left.checked_sub(*right).map_or(
+                    Err(Error::InvalidOperation("integer underflow".into())),
+                    |i| Ok(Int(i)),
+                )
+            }
             (Flt(left), Flt(right)) => Ok(Flt(left - right)),
             (Int(left), Flt(right)) => Ok(Flt(*left as f64 - right)),
             (Flt(left), Int(right)) => Ok(Flt(left - *right as f64)),
@@ -197,7 +207,12 @@ impl Value {
     pub fn op_mul(&self, rhs: &Value) -> Result<Value, Error> {
         use Value::*;
         match (self, rhs) {
-            (Int(left), Int(right)) => Ok(Int(left * right)),
+            (Int(left), Int(right)) => {
+                left.checked_mul(*right).map_or(
+                    Err(Error::InvalidOperation("integer overflow".into())),
+                    |i| Ok(Int(i)),
+                )
+            }
             (Flt(left), Flt(right)) => Ok(Flt(left * right)),
             (Int(left), Flt(right)) => Ok(Flt(*left as f64 * right)),
             (Flt(left), Int(right)) => Ok(Flt(left * *right as f64)),
@@ -213,7 +228,14 @@ impl Value {
     pub fn op_div(&self, rhs: &Value) -> Result<Value, Error> {
         use Value::*;
         match (self, rhs) {
-            (Int(left), Int(right)) => Ok(Int(left / right)),
+            (Int(left), Int(right)) => {
+                left.checked_div(*right).map_or(
+                    Err(Error::InvalidOperation(
+                        "invalid integer division".into(),
+                    )),
+                    |i| Ok(Int(i)),
+                )
+            }
             (Flt(left), Flt(right)) => Ok(Flt(left / right)),
             (Int(left), Flt(right)) => Ok(Flt(*left as f64 / right)),
             (Flt(left), Int(right)) => Ok(Flt(left / *right as f64)),
@@ -452,7 +474,9 @@ impl Debug for Object {
 }
 
 impl Object {
-    fn len(&self) -> usize { self.0.borrow().len() }
+    pub fn new() -> Self { Object(Rc::new(RefCell::new(HashMap::new()))) }
+
+    pub fn len(&self) -> usize { self.0.borrow().len() }
 
     pub fn index_get(&self, index: &String) -> Value {
         self.0
@@ -466,6 +490,15 @@ impl Object {
     }
 }
 
+impl IntoIterator for Object {
+    type IntoIter = std::collections::hash_map::IntoIter<String, Value>;
+    type Item = (String, Value);
+
+    fn into_iter(self) -> Self::IntoIter {
+        ((*self.0).clone()).into_inner().into_iter()
+    }
+}
+
 #[derive(Clone, PartialEq)]
 pub struct Array(Rc<RefCell<VecDeque<Value>>>);
 
@@ -476,6 +509,8 @@ impl Debug for Array {
 }
 
 impl Array {
+    pub fn new() -> Self { Array(Rc::new(RefCell::new(VecDeque::new()))) }
+
     pub fn len(&self) -> usize { self.0.borrow().len() }
 
     pub fn pop_front(&self) -> Value {
@@ -513,13 +548,22 @@ impl Array {
     }
 }
 
+impl IntoIterator for Array {
+    type IntoIter = std::collections::vec_deque::IntoIter<Value>;
+    type Item = Value;
+
+    fn into_iter(self) -> Self::IntoIter {
+        (*self.0).clone().into_inner().into_iter()
+    }
+}
+
 #[derive(Clone)]
 pub struct Func {
     vm:      Rc<VMState>,
     name:    String,
     args:    Rc<[String]>,
     insts:   Rc<[Inst]>,
-    closure: Rc<Scope>,
+    closure: Option<Rc<Scope>>,
 }
 
 impl Debug for Func {
@@ -529,7 +573,13 @@ impl Debug for Func {
             .field("name", &self.name)
             .field("args", &self.args)
             .field("insts", &(self.insts.as_ref() as *const [Inst]))
-            .field("closure", &(self.closure.as_ref() as *const Scope))
+            .field(
+                "closure",
+                &self
+                    .closure
+                    .clone()
+                    .map_or(0 as *const Scope, |c| c.as_ref() as *const Scope),
+            )
             .finish()
     }
 }
@@ -539,7 +589,11 @@ impl PartialEq<Func> for Func {
         return std::ptr::eq(self.vm.as_ref(), other.vm.as_ref())
             && std::ptr::eq(self.args.as_ref(), other.args.as_ref())
             && std::ptr::eq(self.insts.as_ref(), other.insts.as_ref())
-            && std::ptr::eq(self.closure.as_ref(), other.closure.as_ref())
+            && match (&self.closure, &other.closure) {
+                (Some(sc), Some(oc)) => std::ptr::eq(sc.as_ref(), oc.as_ref()),
+                (None, None) => true,
+                _ => false,
+            }
             && self.name == other.name;
     }
 }
@@ -552,7 +606,7 @@ impl Func {
         vm: Rc<VMState>,
         args: Rc<[String]>,
         insts: Rc<[Inst]>,
-        closure: Rc<Scope>,
+        closure: Option<Rc<Scope>>,
     ) -> Self {
         Func {
             name: name.into(),
@@ -573,7 +627,10 @@ impl Func {
                 args.len()
             )));
         }
-        let scope = Rc::new(Scope::extend(Rc::clone(&self.closure)));
+        let scope = match &self.closure {
+            Some(c) => Rc::new(Scope::extend(Rc::clone(&c))),
+            None => Rc::new(Scope::new(None)),
+        };
         for (i, arg) in args.into_iter().enumerate() {
             scope.declare(self.args[i].clone(), arg);
         }

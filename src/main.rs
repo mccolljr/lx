@@ -1,4 +1,5 @@
 mod ast;
+mod ast_rewrite;
 mod compiler;
 mod errors;
 mod lexer;
@@ -20,30 +21,25 @@ fn main() {
     let vm = VM::new(
         compile(
             "
-            fn counter() {
-                let this = {
-                    count: 0,
-                    incr: fn() {
-                        this.count = this.count+1;
-                    },
-                    decr: fn() {
-                        this.count = this.count-1;
+            let fib = fn() {
+                let cache = {'0': 0, '1': 1};
+                let _fib = fn (n) {
+                    if n < 0 {
+                        throw 'n cannot be negative';
                     }
+                    if n % 1 != 0 {
+                        throw 'n cannot be a float';
+                    }
+                    let result = cache[n];
+                    if result == null {
+                        result = _fib(n-1) + _fib(n-2);
+                        cache[n] = result; 
+                    }
+                    return result;
                 };
-                return this;
-            }
-
-            let x = counter();
-            let i = x.incr;
-            let d = x.decr;
-            i();
-            print(x.count);
-            i();
-            print(x.count);
-            i();
-            print(x.count);
-            d();
-            print(x.count);
+                return _fib;
+            } ();
+            print(fib(100));
             ",
         )
         .expect("compilation error"),
@@ -55,7 +51,7 @@ fn main() {
                 if i > 0 {
                     print!(" ");
                 }
-                print!("{}", v.to_string());
+                print!("{:?}", v);
             }
             print!("\n");
             Ok(Value::Null)
@@ -63,7 +59,7 @@ fn main() {
     )
     .with_global(
         "do",
-        NativeFunc::new("do", |args| {
+        NativeFunc::new("do", |args: Vec<Value>| {
             let mut prev: Option<Value> = None;
             for arg in args {
                 if let Some(v) = prev {
@@ -77,7 +73,7 @@ fn main() {
     );
     let result = vm.run();
     match result {
-        Ok(_) => println!("OK!\n\n{:?}", vm),
-        Err(e) => println!("ERROR! {:?}\n\n{:?}", e, vm),
+        Ok(_) => println!("OK!\n\n{:#?}", vm),
+        Err(e) => println!("ERROR! {:?}\n\n{:#?}", e, vm),
     }
 }

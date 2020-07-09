@@ -2,140 +2,65 @@ use super::{
     ast::{
         Expr,
         FnArg,
+        ObjKey,
         Stmt,
     },
+    ast_rewrite::simplify_expr,
     errors::Error,
     parser::Parser,
     runtime::{
-        error::Error as RuntimeError,
         inst::Inst,
         value::Value,
     },
     source::Code,
     token::TokenType,
 };
-use std::{
-    collections::{
-        HashMap,
-        VecDeque,
-    },
-    rc::Rc,
-};
-
-fn const_eval(expr: Expr) -> Result<Value, RuntimeError> {
-    match expr {
-        Expr::LitNull { .. } => Ok(Value::Null),
-        Expr::LitInt { val, .. } => Ok(Value::Int(val)),
-        Expr::LitFlt { val, .. } => Ok(Value::Flt(val)),
-        Expr::LitBool { val, .. } => Ok(Value::Bool(val)),
-        Expr::LitStr { val, .. } => Ok(Value::Str(val)),
-        Expr::LitArr { elements, .. } => {
-            let mut result =
-                Value::from(VecDeque::with_capacity(elements.len()));
-            for elt in elements {
-                result = result.op_feed(&const_eval(elt)?)?;
-            }
-            Ok(result)
-        }
-        Expr::LitObj { fields, .. } => {
-            let result = Value::from(HashMap::new());
-            for field in fields {
-                match *field.key {
-                    Expr::LitStr { val, .. } => {
-                        result.op_index_set(
-                            &Value::Str(val),
-                            &const_eval(*field.val)?,
-                        )?;
-                    }
-                    Expr::Ident { name, .. } => {
-                        result.op_index_set(
-                            &Value::Str(name),
-                            &const_eval(*field.val)?,
-                        )?;
-                    }
-                    _ => {
-                        return Err(RuntimeError::RuntimeError(
-                            "invalid constant evaluation".into(),
-                        ));
-                    }
-                }
-            }
-            Ok(result)
-        }
-        Expr::Paren { expr, .. } => const_eval(*expr),
-        Expr::Binary {
-            lhs: lhs_expr,
-            rhs: rhs_expr,
-            op_typ,
-            ..
-        } => {
-            let lhs = const_eval(*lhs_expr)?;
-            let rhs = const_eval(*rhs_expr)?;
-            Value::op_binary(&lhs, &rhs, op_typ)
-        }
-        Expr::Unary { expr, op_typ, .. } => {
-            let target = const_eval(*expr)?;
-            Value::op_unary(&target, op_typ)
-        }
-        Expr::Ternary {
-            cond, pass, fail, ..
-        } => {
-            if const_eval(*cond)?.truthy() {
-                const_eval(*pass)
-            } else {
-                const_eval(*fail)
-            }
-        }
-        _ => {
-            Err(RuntimeError::RuntimeError(
-                "invalid constant evaluation".into(),
-            ))
-        }
-    }
-}
+use std::rc::Rc;
 
 fn compile_stmt(insts: &mut Vec<Inst>, stmt: Stmt) {
     match stmt {
         Stmt::Expr { expr, .. } => {
-            if expr.is_const_lit() {
-                // Don't compile const literal expr statements,
-                // since they don't do anything at runtime.
-                return;
-            }
-            compile_expr(insts, *expr);
+            compile_expr(insts, simplify_expr(*expr));
             insts.push(Inst::PopStack());
         }
         Stmt::Let {
             ident_name, expr, ..
         } => {
-            compile_expr(insts, *expr);
+            compile_expr(insts, simplify_expr(*expr));
             insts.push(Inst::DeclareNamed(ident_name.clone()));
         }
         Stmt::FnDef {
             ident_name,
             args,
             body,
+            is_closure,
             ..
         } => {
-            compile_func(insts, args, body, Some(ident_name.clone()));
+            compile_func(
+                insts,
+                args,
+                body,
+                Some(ident_name.clone()),
+                is_closure,
+            );
             insts.push(Inst::DeclareNamed(ident_name.clone()));
         }
         Stmt::Assignment { lhs, rhs, .. } => {
             match *lhs {
                 Expr::Ident { name, .. } => {
-                    compile_expr(insts, *rhs);
+                    compile_expr(insts, simplify_expr(*rhs));
                     insts.push(Inst::StoreNamed(name.clone()));
                 }
                 Expr::Index { expr, index, .. } => {
-                    compile_expr(insts, *expr);
-                    compile_expr(insts, *index);
-                    compile_expr(insts, *rhs);
+                    compile_expr(insts, simplify_expr(*expr));
+                    compile_expr(insts, simplify_expr(*index));
+                    compile_expr(insts, simplify_expr(*rhs));
                     insts.push(Inst::IndexSet);
                 }
                 Expr::Selector { expr, elt_name, .. } => {
-                    compile_expr(insts, *expr);
+                    compile_expr(insts, simplify_expr(*expr));
                     insts.push(Inst::PushStack(Value::from(elt_name)));
-                    compile_expr(insts, *rhs);
+                    compile_expr(insts, simplify_expr(*rhs));
                     insts.push(Inst::IndexSet);
                 }
                 _ => unreachable!(),
@@ -145,7 +70,7 @@ fn compile_stmt(insts: &mut Vec<Inst>, stmt: Stmt) {
             let mut escape_indices: Vec<usize> =
                 Vec::with_capacity(head.len() + 1);
             for block in head {
-                compile_expr(insts, *block.cond);
+                compile_expr(insts, simplify_expr(*block.cond));
                 let branch_idx = insts.len();
                 insts.push(Inst::Noop);
                 let start_idx = insts.len();
@@ -168,21 +93,17 @@ fn compile_stmt(insts: &mut Vec<Inst>, stmt: Stmt) {
             }
         }
         Stmt::Return { expr, .. } => {
-            compile_expr(insts, *expr);
+            compile_expr(insts, simplify_expr(*expr));
             insts.push(Inst::Return);
         }
         Stmt::Throw { error, .. } => {
-            compile_expr(insts, *error);
+            compile_expr(insts, simplify_expr(*error));
             insts.push(Inst::Throw);
         }
     }
 }
 
 fn compile_expr(insts: &mut Vec<Inst>, expr: Expr) {
-    if expr.is_const_lit() {
-        insts.push(Inst::PushStack(const_eval(expr).unwrap()));
-        return;
-    }
     match expr {
         Expr::LitNull { .. } => insts.push(Inst::PushStack(Value::Null)),
         Expr::LitInt { val, .. } => {
@@ -195,32 +116,32 @@ fn compile_expr(insts: &mut Vec<Inst>, expr: Expr) {
             insts.push(Inst::PushStack(Value::Bool(val)))
         }
         Expr::LitStr { val, .. } => {
-            insts.push(Inst::PushStack(Value::Str(val.clone())))
+            insts.push(Inst::PushStack(Value::Str(val)))
         }
-        Expr::LitFunc { args, body, .. } => {
-            compile_func(insts, args, body, None)
-        }
+        Expr::LitFunc {
+            args,
+            body,
+            is_closure,
+            ..
+        } => compile_func(insts, args, body, None, is_closure),
         Expr::LitArr { elements, .. } => {
-            insts.push(Inst::PushStack(Value::from(VecDeque::new())));
+            let elt_count = elements.len();
             for e in elements {
                 compile_expr(insts, e);
-                insts.push(Inst::BinaryOp(TokenType::OpFeed))
             }
+            insts.push(Inst::PushStack(Value::from(elt_count as i64)));
+            insts.push(Inst::BuildArray);
         }
         Expr::LitObj { fields, .. } => {
             let fieldct = fields.len();
             for field in fields {
-                match *field.key {
-                    Expr::Ident { name, .. } => {
-                        insts.push(Inst::PushStack(Value::from(name.clone())))
+                match field.key {
+                    ObjKey::Static(val, ..) => {
+                        insts.push(Inst::PushStack(Value::from(val)))
                     }
-                    Expr::LitStr { val, .. } => {
-                        insts.push(Inst::PushStack(Value::from(val.clone())))
-                    }
-                    Expr::Paren { expr, .. } => {
+                    ObjKey::Dynamic(expr) => {
                         compile_expr(insts, *expr);
                     }
-                    _ => unreachable!(),
                 }
                 compile_expr(insts, *field.val);
             }
@@ -283,16 +204,18 @@ fn compile_func(
     args: Vec<FnArg>,
     body: Vec<Stmt>,
     name: Option<String>,
+    is_closure: bool,
 ) {
     let mut fn_insts = Vec::<Inst>::new();
     for stmt in body {
         compile_stmt(&mut fn_insts, stmt);
     }
-    insts.push(Inst::MakeClosure(
-        args.into_iter().map(|a| a.name.clone()).collect(),
-        Rc::from(fn_insts),
+    insts.push(Inst::MakeFunc {
+        args: args.into_iter().map(|a| a.name.clone()).collect(),
+        insts: Rc::from(fn_insts),
         name,
-    ));
+        is_closure,
+    });
 }
 
 pub fn compile(src: &str) -> Result<Vec<Inst>, Error> {
