@@ -71,7 +71,7 @@ impl Lexer {
             ':' => self.lex_1(Colon),
             '.' => self.lex_1(Dot),
             '>' => self.lex_2(&[('=', OpGeq)], OpGt),
-            '<' => self.lex_2(&[('=', OpLeq), ('<', OpFeed)], OpLt),
+            '<' => self.lex_2(&[('=', OpLeq)], OpLt),
             '=' => self.lex_2(&[('=', OpEq)], Assign),
             '!' => self.lex_2(&[('=', OpNeq)], Bang),
             _ => {
@@ -345,7 +345,6 @@ mod tests {
         assert_tokens!("<=", OpLeq(0, 2, "<="));
         assert_tokens!("==", OpEq(0, 2, "=="));
         assert_tokens!("!=", OpNeq(0, 2, "!="));
-        assert_tokens!("<<", OpFeed(0, 2, "<<"));
 
         assert_tokens!("!", Bang(0, 1, "!"));
         assert_tokens!("=", Assign(0, 1, "="));

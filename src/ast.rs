@@ -361,11 +361,21 @@ pub enum Expr {
 impl Display for Expr {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         match self {
-            Expr::LitNull { .. } => write!(f, "null"),
-            Expr::LitInt { val, .. } => write!(f, "{}", val),
-            Expr::LitFlt { val, .. } => write!(f, "{}", val),
-            Expr::LitBool { val, .. } => write!(f, "{}", val),
-            Expr::LitStr { val, .. } => write!(f, "{:?}", val),
+            Expr::LitNull { .. } => {
+                write!(f, "null")?;
+            }
+            Expr::LitInt { val, .. } => {
+                write!(f, "{}", val)?;
+            }
+            Expr::LitFlt { val, .. } => {
+                write!(f, "{}", val)?;
+            }
+            Expr::LitBool { val, .. } => {
+                write!(f, "{}", val)?;
+            }
+            Expr::LitStr { val, .. } => {
+                write!(f, "{:?}", val)?;
+            }
             Expr::LitArr { elements, .. } => {
                 write!(f, "[")?;
                 for (i, v) in elements.iter().enumerate() {
@@ -374,7 +384,7 @@ impl Display for Expr {
                         write!(f, "{}", v)?;
                     }
                 }
-                write!(f, "]")
+                write!(f, "]")?;
             }
             Expr::LitObj { fields, .. } => {
                 write!(f, "{{")?;
@@ -396,7 +406,7 @@ impl Display for Expr {
                         }
                     }
                 }
-                write!(f, "}}")
+                write!(f, "}}")?;
             }
             Expr::LitFunc { args, body, .. } => {
                 write!(f, "fn (")?;
@@ -410,32 +420,45 @@ impl Display for Expr {
                 for stmt in body.iter() {
                     write!(f, "\n\t{}", stmt)?;
                 }
-                write!(f, "\n}}")
+                write!(f, "\n}}")?;
             }
             Expr::Call { expr, args, .. } => {
-                write!(f, "{}(", expr)?;
+                write!(f, "({}(", expr)?;
                 for (i, arg) in args.iter().enumerate() {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
                     write!(f, "{}", arg)?;
                 }
-                write!(f, ")")
+                write!(f, "))")?;
             }
-            Expr::Ident { name, .. } => write!(f, "{}", name),
-            Expr::Paren { expr, .. } => write!(f, "({})", expr),
-            Expr::Unary { op_typ, expr, .. } => write!(f, "{}{}", op_typ, expr),
+            Expr::Ident { name, .. } => {
+                write!(f, "{}", name)?;
+            }
+            Expr::Paren { expr, .. } => {
+                write!(f, "({})", expr)?;
+            }
+            Expr::Unary { op_typ, expr, .. } => {
+                write!(f, "({}{})", op_typ, expr)?;
+            }
             Expr::Binary {
                 lhs, op_typ, rhs, ..
-            } => write!(f, "({} {} {})", lhs, op_typ, rhs),
+            } => {
+                write!(f, "({} {} {})", lhs, op_typ, rhs)?;
+            }
             Expr::Ternary {
                 cond, pass, fail, ..
-            } => write!(f, "({} ? {} : {})", cond, pass, fail),
-            Expr::Index { expr, index, .. } => write!(f, "{}[{}]", expr, index),
+            } => {
+                write!(f, "({} ? {} : {})", cond, pass, fail)?;
+            }
+            Expr::Index { expr, index, .. } => {
+                write!(f, "({}[{}])", expr, index)?;
+            }
             Expr::Selector { expr, elt_name, .. } => {
-                write!(f, "{}.{}", expr, elt_name)
+                write!(f, "({}.{})", expr, elt_name)?;
             }
         }
+        Ok(())
     }
 }
 

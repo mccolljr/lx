@@ -264,22 +264,6 @@ impl Value {
         }
     }
 
-    pub fn op_feed(&self, rhs: &Value) -> Result<Value, Error> {
-        use Value::*;
-        match self {
-            Array(arr) => {
-                arr.push_back(rhs.clone());
-                Ok(self.clone())
-            }
-            _ => {
-                Err(Error::InvalidOperation(format!(
-                    "can't feed {:?} into {:?}",
-                    rhs, self,
-                )))
-            }
-        }
-    }
-
     pub fn op_eq(&self, rhs: &Value) -> Result<Value, Error> {
         use Value::*;
         Ok(Bool(self == rhs))
@@ -349,19 +333,6 @@ impl Value {
                 Err(Error::InvalidOperation(format!(
                     "can't compare {:?} to {:?} (<=)",
                     self, rhs,
-                )))
-            }
-        }
-    }
-
-    pub fn op_feed_unary(&self) -> Result<Value, Error> {
-        use Value::*;
-        match self {
-            Array(arr) => Ok(arr.pop_front()),
-            _ => {
-                Err(Error::InvalidOperation(format!(
-                    "can't receive feed from {:?}",
-                    self,
                 )))
             }
         }
@@ -446,7 +417,6 @@ impl Value {
             TokenType::OpLeq => lhs.op_leq(&rhs),
             TokenType::OpGt => lhs.op_gt(&rhs),
             TokenType::OpLt => lhs.op_lt(&rhs),
-            TokenType::OpFeed => lhs.op_feed(&rhs),
             _ => unreachable!(),
         }
     }
@@ -458,7 +428,6 @@ impl Value {
         match op {
             TokenType::OpSub => target.op_sub_unary(),
             TokenType::Bang => target.op_not_unary(),
-            TokenType::OpFeed => target.op_feed_unary(),
             _ => unreachable!(),
         }
     }

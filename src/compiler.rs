@@ -228,7 +228,7 @@ fn compile_func(
 }
 
 pub fn compile(src: &str) -> Result<Vec<Inst>, Error> {
-    let mut parser = Parser::new(&Code::from(src));
+    let mut parser = Parser::new(&Code::from(src), true);
     let stmts = parser.parse_stmt_list(vec![TokenType::EOF])?;
     let mut insts = Vec::<Inst>::new();
     for stmt in stmts {

@@ -89,19 +89,56 @@ pub struct Parser {
     lex:    Lexer,
     cur_t:  Token,
     peek_t: Token,
-    scope:  Rc<ParseScope>,
+    scope:  Option<Rc<ParseScope>>,
 }
 
 impl Parser {
-    pub fn new(src: &Code) -> Self {
+    pub fn new(src: &Code, withScopeTracking: bool) -> Self {
         let mut p = Parser {
             lex:    Lexer::new(src),
             cur_t:  Token::new_meta(0, TokenType::EOF),
             peek_t: Token::new_meta(0, TokenType::EOF),
-            scope:  ParseScope::create(Some(ParseScope::global())),
+            scope:  if withScopeTracking {
+                Some(ParseScope::create(Some(ParseScope::global())))
+            } else {
+                None
+            },
         };
         p.advance().expect("fatal error");
         p
+    }
+
+    fn open_scope(&mut self) {
+        if let Some(scope) = &self.scope {
+            self.scope = Some(ParseScope::create(Some(Rc::clone(scope))));
+        }
+    }
+
+    fn close_scope(&mut self) {
+        if let Some(scope) = &self.scope {
+            self.scope = Some(Rc::clone(scope.parent.as_ref().unwrap()));
+        }
+    }
+
+    fn scope_declare(&mut self, name: String, pos: Pos) -> Result<(), Error> {
+        if let Some(scope) = &self.scope {
+            return scope.declare(name, pos);
+        }
+        Ok(())
+    }
+
+    fn scope_use(&mut self, name: &String, pos: Pos) -> Result<(), Error> {
+        if let Some(scope) = &self.scope {
+            return scope.utilize(name, pos);
+        }
+        Ok(())
+    }
+
+    fn scope_is_closure(&mut self) -> bool {
+        if let Some(scope) = &self.scope {
+            return !scope.captures.borrow().is_empty();
+        }
+        true // if we're not tracking scope, assume every scope is a closure
     }
 
     pub fn parse_stmt_list(
@@ -148,7 +185,7 @@ impl Parser {
             TokenType::Ident => {
                 let Token { lit: name, pos, .. } =
                     self.expect(TokenType::Ident)?;
-                self.scope.declare(name.clone(), pos)?;
+                self.scope_declare(name.clone(), pos)?;
                 Ok((LetTarget::Ident(name), pos))
             }
             TokenType::OSquare => {
@@ -161,7 +198,7 @@ impl Parser {
                     }
                     let Token { lit: name, pos, .. } =
                         self.expect(TokenType::Ident)?;
-                    self.scope.declare(name.clone(), pos)?;
+                    self.scope_declare(name.clone(), pos)?;
                     names.push(name);
                 }
                 let end_pos = self.expect(TokenType::CSquare)?.pos;
@@ -213,10 +250,10 @@ impl Parser {
                     self.advance()?;
                     let Token { pos, lit: name, .. } =
                         self.expect(TokenType::Ident)?;
-                    self.scope.declare(name.clone(), pos)?;
+                    self.scope_declare(name.clone(), pos)?;
                     return Ok(ObjDestructItem::NameMap(name_or_key, name));
                 }
-                self.scope.declare(name_or_key.clone(), pos)?;
+                self.scope_declare(name_or_key.clone(), pos)?;
                 Ok(ObjDestructItem::Name(name_or_key))
             }
             TokenType::LitString => {
@@ -226,7 +263,7 @@ impl Parser {
                 self.expect(TokenType::Colon)?;
                 let Token { pos, lit: name, .. } =
                     self.expect(TokenType::Ident)?;
-                self.scope.declare(name.clone(), pos)?;
+                self.scope_declare(name.clone(), pos)?;
                 Ok(ObjDestructItem::NameMap(key, name))
             }
             _ => {
@@ -244,12 +281,12 @@ impl Parser {
         let ident = self.expect(TokenType::Ident)?;
         let ident_name = ident.lit;
         let ident_pos = ident.pos;
-        self.scope.declare(ident_name.clone(), ident_pos)?;
-        self.scope = ParseScope::create(Some(self.scope.clone()));
+        self.scope_declare(ident_name.clone(), ident_pos)?;
+        self.open_scope();
         let oparen = self.expect(TokenType::OParen)?.pos;
         let args = self.parse_fnarg_list()?;
         for arg in args.iter() {
-            self.scope.declare(arg.name.clone(), arg.pos)?;
+            self.scope_declare(arg.name.clone(), arg.pos)?;
         }
         let cparen = self.expect(TokenType::CParen)?.pos;
         let obrace = self.expect(TokenType::OBrace)?.pos;
@@ -265,9 +302,9 @@ impl Parser {
             obrace,
             body,
             cbrace,
-            is_closure: !self.scope.captures.borrow().is_empty(),
+            is_closure: self.scope_is_closure(),
         };
-        self.scope = self.scope.parent.clone().unwrap();
+        self.close_scope();
         Ok(stmt)
     }
 
@@ -361,22 +398,28 @@ impl Parser {
         Ok(exprs)
     }
 
-    fn parse_expr(&mut self, precedence: i32) -> Result<Expr, Error> {
-        let mut x: Expr = match self.peek_t.typ {
-            TokenType::Bang | TokenType::OpSub | TokenType::OpFeed => {
+    fn parse_expr(&mut self, min_binding_power: i32) -> Result<Expr, Error> {
+        let mut x: Expr = match self.peek_t.typ.prefix_binding_power() {
+            Some((_, prefix_rbp)) => {
                 self.advance()?;
+                // if prefix_rbp < min_binding_power {
+                //     todo!()
+                // }
+                let op_pos = self.cur_t.pos;
+                let op_typ = self.cur_t.typ;
                 Expr::Unary {
-                    op_pos: self.cur_t.pos,
-                    op_typ: self.cur_t.typ,
-                    expr:   Box::new(self.parse_primary_expr()?),
+                    op_typ,
+                    op_pos,
+                    expr: Box::new(self.parse_expr(prefix_rbp)?),
                 }
             }
-            _ => self.parse_primary_expr()?,
+            None => self.parse_primary_expr()?,
         };
 
-        while self.peek_t.typ.is_operator() {
-            let (lbp, rbp) = self.peek_t.typ.precedence();
-            if lbp < precedence {
+        while let Some((infix_lbp, infix_rbp)) =
+            self.peek_t.typ.infix_binding_power()
+        {
+            if infix_lbp < min_binding_power {
                 break;
             }
             match self.peek_t.typ {
@@ -398,7 +441,7 @@ impl Parser {
                         lhs:    Box::new(x),
                         op_pos: self.cur_t.pos,
                         op_typ: self.cur_t.typ,
-                        rhs:    Box::new(self.parse_expr(rbp)?),
+                        rhs:    Box::new(self.parse_expr(infix_rbp)?),
                     };
                 }
             }
@@ -439,12 +482,12 @@ impl Parser {
                 })
             }
             TokenType::KwFn => {
-                self.scope = ParseScope::create(Some(self.scope.clone()));
+                self.open_scope();
                 let kwfn = self.cur_t.pos;
                 let oparen = self.expect(TokenType::OParen)?.pos;
                 let args = self.parse_fnarg_list()?;
                 for arg in args.iter() {
-                    self.scope.declare(arg.name.clone(), arg.pos)?;
+                    self.scope_declare(arg.name.clone(), arg.pos)?;
                 }
                 let cparen = self.expect(TokenType::CParen)?.pos;
                 let obrace = self.expect(TokenType::OBrace)?.pos;
@@ -458,15 +501,15 @@ impl Parser {
                     obrace,
                     body,
                     cbrace,
-                    is_closure: !self.scope.captures.borrow().is_empty(),
+                    is_closure: self.scope_is_closure(),
                 };
-                self.scope = self.scope.parent.clone().unwrap();
+                self.close_scope();
                 Ok(expr)
             }
             TokenType::Ident => {
                 let pos = self.cur_t.pos;
                 let name = self.cur_t.lit.clone();
-                self.scope.utilize(&name, pos)?;
+                self.scope_use(&name, pos)?;
                 Ok(Expr::Ident { pos, name })
             }
             TokenType::OParen => {
@@ -532,7 +575,7 @@ impl Parser {
     }
 
     fn parse_ternary(&mut self, cond: Expr) -> Result<Expr, Error> {
-        let (_, rbp) = TokenType::Question.precedence();
+        let (_, rbp) = TokenType::Question.infix_binding_power().unwrap();
         Ok(Expr::Ternary {
             cond:     Box::new(cond),
             question: self.expect(TokenType::Question)?.pos,
@@ -669,10 +712,107 @@ mod test {
     macro_rules! assert_expr {
         ($src:expr, $want:expr) => {{
             let src = crate::source::Code::from($src);
-            let mut parser = crate::parser::Parser::new(&src);
+            let mut parser = crate::parser::Parser::new(&src, false);
             let got = parser.parse_expr(0).unwrap();
             assert_eq!($want, got);
         }};
+    }
+
+    macro_rules! assert_expr_str {
+        ($src:expr, $want:expr) => {{
+            let src = crate::source::Code::from($src);
+            let mut parser = crate::parser::Parser::new(&src, false);
+            let got = format!("{}", parser.parse_expr(0).unwrap());
+            assert_eq!($want, got);
+        }};
+        ($src:expr; ERROR) => {{
+            let src = crate::source::Code::from($src);
+            let mut parser = crate::parser::Parser::new(&src, false);
+            assert!(parser.parse_expr(0).is_err());
+        }};
+    }
+
+    #[test]
+    fn test_operator_binding_power() {
+        // selectors, indexes, and calls
+        assert_expr_str!("a", "a");
+        assert_expr_str!("a.b", "(a.b)");
+        assert_expr_str!("a[b]", "(a[b])");
+        assert_expr_str!("a.b.c", "((a.b).c)");
+        assert_expr_str!("a[b][c]", "((a[b])[c])");
+        assert_expr_str!("a.b[c]", "((a.b)[c])");
+        assert_expr_str!("a[b].c", "((a[b]).c)");
+        assert_expr_str!("a()[b]", "((a())[b])");
+        assert_expr_str!("a().b", "((a()).b)");
+        assert_expr_str!("a[b]()", "((a[b])())");
+        assert_expr_str!("a.b()", "((a.b)())");
+        assert_expr_str!("a.b().c", "(((a.b)()).c)");
+        assert_expr_str!("a[b]().c", "(((a[b])()).c)");
+        assert_expr_str!("a.b()[c]", "(((a.b)())[c])");
+        assert_expr_str!("a()[b]()[c]", "((((a())[b])())[c])");
+        assert_expr_str!("a().b().c", "((((a()).b)()).c)");
+        assert_expr_str!("a()[b().c]", "((a())[((b()).c)])");
+        assert_expr_str!("a[b().c]", "(a[((b()).c)])");
+
+        // selectors, indexes, and calls as operand
+        assert_expr_str!("a - 1", "(a - 1)");
+        assert_expr_str!("a.b - 1", "((a.b) - 1)");
+        assert_expr_str!("a[b] - 1", "((a[b]) - 1)");
+        assert_expr_str!("a.b.c - 1", "(((a.b).c) - 1)");
+        assert_expr_str!("a[b][c] - 1", "(((a[b])[c]) - 1)");
+        assert_expr_str!("a.b[c] - 1", "(((a.b)[c]) - 1)");
+        assert_expr_str!("a[b].c - 1", "(((a[b]).c) - 1)");
+        assert_expr_str!("a()[b] - 1", "(((a())[b]) - 1)");
+        assert_expr_str!("a().b - 1", "(((a()).b) - 1)");
+        assert_expr_str!("a[b]() - 1", "(((a[b])()) - 1)");
+        assert_expr_str!("a.b() - 1", "(((a.b)()) - 1)");
+        assert_expr_str!("a.b().c - 1", "((((a.b)()).c) - 1)");
+        assert_expr_str!("a[b]().c - 1", "((((a[b])()).c) - 1)");
+        assert_expr_str!("a.b()[c] - 1", "((((a.b)())[c]) - 1)");
+        assert_expr_str!("a()[b]()[c] - 1", "(((((a())[b])())[c]) - 1)");
+        assert_expr_str!("a().b().c - 1", "(((((a()).b)()).c) - 1)");
+        assert_expr_str!("a()[b().c] - 1", "(((a())[((b()).c)]) - 1)");
+        assert_expr_str!("a[b().c] - 1", "((a[((b()).c)]) - 1)");
+
+        // selectors, indexes, and calls with prefix
+        assert_expr_str!("-a", "(-a)");
+        assert_expr_str!("-a.b", "(-(a.b))");
+        assert_expr_str!("-a[b]", "(-(a[b]))");
+        assert_expr_str!("-a.b.c", "(-((a.b).c))");
+        assert_expr_str!("-a[b][c]", "(-((a[b])[c]))");
+        assert_expr_str!("-a.b[c]", "(-((a.b)[c]))");
+        assert_expr_str!("-a[b].c", "(-((a[b]).c))");
+        assert_expr_str!("-a()[b]", "(-((a())[b]))");
+        assert_expr_str!("-a().b", "(-((a()).b))");
+        assert_expr_str!("-a[b]()", "(-((a[b])()))");
+        assert_expr_str!("-a.b()", "(-((a.b)()))");
+        assert_expr_str!("-a.b().c", "(-(((a.b)()).c))");
+        assert_expr_str!("-a[b]().c", "(-(((a[b])()).c))");
+        assert_expr_str!("-a.b()[c]", "(-(((a.b)())[c]))");
+        assert_expr_str!("-a()[b]()[c]", "(-((((a())[b])())[c]))");
+        assert_expr_str!("-a().b().c", "(-((((a()).b)()).c))");
+        assert_expr_str!("-a()[b().c]", "(-((a())[((b()).c)]))");
+        assert_expr_str!("-a[b().c]", "(-(a[((b()).c)]))");
+
+        // selectors, indexes, and calls with prefix as operand
+        assert_expr_str!("-a + 1", "((-a) + 1)");
+        assert_expr_str!("-a.b + 1", "((-(a.b)) + 1)");
+        assert_expr_str!("-a[b] + 1", "((-(a[b])) + 1)");
+        assert_expr_str!("-a.b.c + 1", "((-((a.b).c)) + 1)");
+        assert_expr_str!("-a[b][c] + 1", "((-((a[b])[c])) + 1)");
+        assert_expr_str!("-a.b[c] + 1", "((-((a.b)[c])) + 1)");
+        assert_expr_str!("-a[b].c + 1", "((-((a[b]).c)) + 1)");
+        assert_expr_str!("-a()[b] + 1", "((-((a())[b])) + 1)");
+        assert_expr_str!("-a().b + 1", "((-((a()).b)) + 1)");
+        assert_expr_str!("-a[b]() + 1", "((-((a[b])())) + 1)");
+        assert_expr_str!("-a.b() + 1", "((-((a.b)())) + 1)");
+        assert_expr_str!("-a.b().c + 1", "((-(((a.b)()).c)) + 1)");
+        assert_expr_str!("-a[b]().c + 1", "((-(((a[b])()).c)) + 1)");
+        assert_expr_str!("-a.b()[c] + 1", "((-(((a.b)())[c])) + 1)");
+        assert_expr_str!("-a()[b]()[c] + 1", "((-((((a())[b])())[c])) + 1)");
+        assert_expr_str!("-a().b().c + 1", "((-((((a()).b)()).c)) + 1)");
+        assert_expr_str!("-a()[b().c] + 1", "((-((a())[((b()).c)])) + 1)");
+        assert_expr_str!("-a[b().c] + 1", "((-(a[((b()).c)])) + 1)");
     }
 
     #[test]
@@ -730,7 +870,7 @@ mod test {
             obrace:     pos!(6),
             body:       vec![],
             cbrace:     pos!(7),
-            is_closure: false,
+            is_closure: true, // always true in parse tests
         });
         assert_expr!("fn (a, b, c) {}", Expr::LitFunc {
             kwfn:       pos!(0, 2),
@@ -744,7 +884,7 @@ mod test {
             obrace:     pos!(13),
             body:       vec![],
             cbrace:     pos!(14),
-            is_closure: false,
+            is_closure: true, // always true in parse tests
         });
         assert_expr!("a()", Expr::Call {
             expr:   expr!(Expr::Ident {

@@ -60,7 +60,6 @@ pub enum TokenType {
     OpGeq,
     OpLt,
     OpGt,
-    OpFeed,
 
     KwLet,
     KwFn,
@@ -107,7 +106,6 @@ impl Display for TokenType {
             OpGeq => write!(f, ">="),
             OpLt => write!(f, "<"),
             OpGt => write!(f, ">"),
-            OpFeed => write!(f, "<<"),
             KwLet => write!(f, "let"),
             KwFn => write!(f, "fn"),
             KwIf => write!(f, "if"),
@@ -123,29 +121,27 @@ impl Display for TokenType {
 }
 
 impl TokenType {
-    pub fn is_operator(&self) -> bool {
+    pub fn infix_binding_power(&self) -> Option<(i32, i32)> {
         use TokenType::*;
-        match self {
-            OpAdd | OpSub | OpMul | OpDiv | OpRem | OpEq | OpNeq | OpLeq
-            | OpGeq | OpLt | OpGt | OParen | Question | OpFeed | OSquare
-            | Dot => true,
-            _ => false,
-        }
+        #[rustfmt::skip]
+        return match self {
+            Question                    => Some((20, 19)),
+            OpEq | OpNeq                => Some((30, 29)),
+            OpGt | OpLt | OpGeq | OpLeq => Some((39, 40)),
+            OpAdd | OpSub               => Some((49, 50)),
+            OpDiv | OpRem               => Some((59, 60)),
+            OpMul                       => Some((69, 70)),
+            OSquare | Dot | OParen      => Some((89, 90)),
+            _ => None,
+        };
     }
 
-    pub fn precedence(&self) -> (i32, i32) {
+    pub fn prefix_binding_power(&self) -> Option<((), i32)> {
         use TokenType::*;
-        match self {
-            Question => (2, 2),
-            OpEq | OpNeq => (6, 6),
-            OpGt | OpLt | OpGeq | OpLeq => (7, 8),
-            OpAdd | OpSub => (9, 10),
-            OpDiv | OpRem => (12, 12),
-            OpMul => (13, 14),
-            OParen => (15, 16),
-            OSquare | Dot => (17, 18),
-            OpFeed => (19, 20),
-            _ => (0, 0),
-        }
+        #[rustfmt::skip]
+        return match self {
+            OpSub | Bang  => Some(((), 82)),
+            _ => None,
+        };
     }
 }
