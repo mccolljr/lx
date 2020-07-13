@@ -21,11 +21,22 @@ fn main() {
     let vm = VM::new(
         compile(
             "
-            fn make_arr() {
-                return [1,2,3];
+            let x = 0;
+            while true {
+                x = x + 1;
+                let y = 0;
+                while true {
+                    y = y + 1;
+                    print(y);
+                    if y >= x {
+                        break;
+                    }
+                }
+                print(x);
+                if x >= 10 {
+                    break;
+                }
             }
-            let [ a, b, c ] = make_arr();
-            print(a,b,c);
             ",
         )
         .expect("compilation error"),

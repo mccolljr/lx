@@ -27,6 +27,13 @@ pub struct VMState {
     insts:      Rc<[Inst]>,
 }
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum FrameStatus {
+    Broke,    // break statement encountered
+    Returned, // return statement encountered
+    Ended,    // last instruction was executed with no break or return
+}
+
 impl VM {
     pub fn new(prog: Vec<Inst>) -> Self {
         VM {
@@ -51,7 +58,8 @@ impl VM {
         self.state.run_frame(
             Rc::clone(&self.state.insts),
             Rc::clone(&self.state.root_scope),
-        )
+        )?;
+        Ok(())
     }
 }
 
@@ -81,9 +89,10 @@ impl VMState {
         self: &Rc<Self>,
         insts: Rc<[Inst]>,
         scope: Rc<Scope>,
-    ) -> Result<(), Error> {
+    ) -> Result<FrameStatus, Error> {
         let mut ip: usize = 0;
         let mut ret_val = Value::Null;
+        let mut exit_status = FrameStatus::Ended;
         let ret_sp = self.stack.borrow().len();
         loop {
             if ip >= insts.len() {
@@ -124,15 +133,15 @@ impl VMState {
                     if let Value::Object(obj) = source {
                         for item in items.iter() {
                             match item {
-                                ObjDestructItem::Name(name) => {
+                                ObjDestructItem::Name(ident) => {
                                     scope.declare(
-                                        name.clone(),
-                                        obj.index_get(name),
+                                        ident.name.clone(),
+                                        obj.index_get(&ident.name),
                                     );
                                 }
-                                ObjDestructItem::NameMap(key, name) => {
+                                ObjDestructItem::NameMap(key, ident) => {
                                     scope.declare(
-                                        name.clone(),
+                                        ident.name.clone(),
                                         obj.index_get(key),
                                     );
                                 }
@@ -219,6 +228,7 @@ impl VMState {
                 }
                 Inst::Return => {
                     ret_val = self.pop_stack()?;
+                    exit_status = FrameStatus::Returned;
                     break;
                 }
                 Inst::BuildObject => {
@@ -263,11 +273,40 @@ impl VMState {
                         self.pop_stack()?.to_string(),
                     ));
                 }
+                Inst::Break => {
+                    exit_status = FrameStatus::Broke;
+                    break;
+                }
+                Inst::Subframe { insts, on_break } => {
+                    match self.run_frame(
+                        insts,
+                        Rc::new(Scope::extend(Rc::clone(&scope))),
+                    )? {
+                        FrameStatus::Returned => {
+                            ret_val = self.pop_stack()?;
+                            exit_status = FrameStatus::Returned;
+                            break;
+                        }
+                        FrameStatus::Broke => {
+                            self.pop_stack()?;
+                            if on_break.is_some() {
+                                ip = on_break.unwrap();
+                                continue;
+                            } else {
+                                exit_status = FrameStatus::Broke;
+                                break;
+                            }
+                        }
+                        FrameStatus::Ended => {
+                            self.pop_stack()?;
+                        }
+                    }
+                }
             }
             ip += 1;
         }
         self.truncate_stack(ret_sp);
         self.push_stack(ret_val)?;
-        Ok(())
+        Ok(exit_status)
     }
 }

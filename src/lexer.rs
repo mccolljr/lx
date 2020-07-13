@@ -103,12 +103,11 @@ impl Lexer {
 
     #[inline]
     fn lex_1(&self, typ: TokenType) -> Result<Token, Error> {
+        let pos = Pos::one(self.cur_i);
         Ok(Token::new(
-            Pos::one(self.cur_i),
+            pos,
             typ,
-            self.src[self.cur_i..self.cur_i + 1]
-                .iter()
-                .collect::<String>(),
+            self.src[pos].iter().collect::<String>(),
         ))
     }
 
@@ -122,10 +121,11 @@ impl Lexer {
             if self.peek_c == *c {
                 let start = self.cur_i;
                 self.advance();
+                let pos = Pos::span(start, 2);
                 return Ok(Token::new(
-                    Pos::span(start, 2),
+                    pos,
                     *typ,
-                    self.src[start..start + 2].iter().collect::<String>(),
+                    self.src[pos].iter().collect::<String>(),
                 ));
             }
         }
@@ -165,18 +165,15 @@ impl Lexer {
             self.advance();
         }
 
-        if has_decimal || has_exp {
-            return Ok(Token::new(
-                Pos::span(start, self.peek_i - start),
-                LitFloat,
-                self.src[start..self.peek_i].iter().collect::<String>(),
-            ));
-        }
-
+        let pos = Pos::span(start, self.peek_i - start);
         Ok(Token::new(
-            Pos::span(start, self.peek_i - start),
-            LitInt,
-            self.src[start..self.peek_i].iter().collect::<String>(),
+            pos,
+            if has_decimal || has_exp {
+                LitFloat
+            } else {
+                LitInt
+            },
+            String::from_iter(&self.src[pos]),
         ))
     }
 
@@ -189,9 +186,10 @@ impl Lexer {
             self.advance();
         }
 
-        let lit = String::from_iter(&self.src[start..self.peek_i]);
+        let pos = Pos::span(start, self.peek_i - start);
+        let lit = String::from_iter(&self.src[pos]);
         Ok(Token::new(
-            Pos::span(start, self.peek_i - start),
+            pos,
             match lit.as_ref() {
                 "let" => KwLet,
                 "fn" => KwFn,
@@ -203,6 +201,8 @@ impl Lexer {
                 "false" => KwFalse,
                 "null" => KwNull,
                 "throw" => KwThrow,
+                "while" => KwWhile,
+                "break" => KwBreak,
                 _ => Ident,
             },
             lit,

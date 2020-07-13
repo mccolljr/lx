@@ -14,6 +14,7 @@ use crate::ast::{
     ElseBlock,
     Expr,
     FnArg,
+    Ident,
     IfBlock,
     LetTarget,
     Node,
@@ -86,23 +87,27 @@ impl ParseScope {
 }
 
 pub struct Parser {
-    lex:    Lexer,
-    cur_t:  Token,
-    peek_t: Token,
-    scope:  Option<Rc<ParseScope>>,
+    lex:        Lexer,
+    cur_t:      Token,
+    peek_t:     Token,
+    scope:      Option<Rc<ParseScope>>,
+    func_depth: usize,
+    loop_depth: usize,
 }
 
 impl Parser {
     pub fn new(src: &Code, with_scope_tracking: bool) -> Self {
         let mut p = Parser {
-            lex:    Lexer::new(src),
-            cur_t:  Token::new_meta(0, TokenType::EOF),
-            peek_t: Token::new_meta(0, TokenType::EOF),
-            scope:  if with_scope_tracking {
+            lex:        Lexer::new(src),
+            cur_t:      Token::new_meta(0, TokenType::EOF),
+            peek_t:     Token::new_meta(0, TokenType::EOF),
+            scope:      if with_scope_tracking {
                 Some(ParseScope::create(Some(ParseScope::global())))
             } else {
                 None
             },
+            func_depth: 0,
+            loop_depth: 0,
         };
         p.advance().expect("fatal error");
         p
@@ -143,7 +148,7 @@ impl Parser {
 
     pub fn parse_stmt_list(
         &mut self,
-        terminators: Vec<TokenType>,
+        terminators: &[TokenType],
     ) -> Result<Vec<Stmt>, Error> {
         let mut stmts: Vec<Stmt> = Vec::with_capacity(3);
         while !terminators.contains(&self.peek_t.typ) {
@@ -157,7 +162,32 @@ impl Parser {
             TokenType::KwLet => self.parse_let_stmt(),
             TokenType::KwFn => self.parse_fndef_stmt(),
             TokenType::KwIf => self.parse_if_stmt(),
-            TokenType::KwReturn => self.parse_return_stmt(),
+            TokenType::KwWhile => self.parse_while_stmt(),
+            TokenType::KwReturn => {
+                if self.func_depth > 0 {
+                    self.parse_return_stmt()
+                } else {
+                    Err(Error::NotAllowed {
+                        at:   self.peek_t.pos,
+                        what: String::from(
+                            "return not allowed outside of function",
+                        ),
+                    })
+                }
+            }
+            TokenType::KwBreak => {
+                if self.loop_depth > 0 {
+                    Ok(Stmt::Break {
+                        kwbreak: self.expect(TokenType::KwBreak)?.pos,
+                        semi:    self.expect(TokenType::Semi)?.pos,
+                    })
+                } else {
+                    Err(Error::NotAllowed {
+                        at:   self.peek_t.pos,
+                        what: String::from("break not allowed outside of loop"),
+                    })
+                }
+            }
             TokenType::KwThrow => self.parse_throw_stmt(),
             _ => self.parse_expr_or_assignment_stmt(),
         }
@@ -186,7 +216,7 @@ impl Parser {
                 let Token { lit: name, pos, .. } =
                     self.expect(TokenType::Ident)?;
                 self.scope_declare(name.clone(), pos)?;
-                Ok((LetTarget::Ident(name), pos))
+                Ok((LetTarget::Ident(Ident { name, pos }), pos))
             }
             TokenType::OSquare => {
                 self.advance()?;
@@ -251,10 +281,16 @@ impl Parser {
                     let Token { pos, lit: name, .. } =
                         self.expect(TokenType::Ident)?;
                     self.scope_declare(name.clone(), pos)?;
-                    return Ok(ObjDestructItem::NameMap(name_or_key, name));
+                    return Ok(ObjDestructItem::NameMap(name_or_key, Ident {
+                        name,
+                        pos,
+                    }));
                 }
                 self.scope_declare(name_or_key.clone(), pos)?;
-                Ok(ObjDestructItem::Name(name_or_key))
+                Ok(ObjDestructItem::Name(Ident {
+                    name: name_or_key,
+                    pos,
+                }))
             }
             TokenType::LitString => {
                 // can only be NameMap
@@ -264,7 +300,7 @@ impl Parser {
                 let Token { pos, lit: name, .. } =
                     self.expect(TokenType::Ident)?;
                 self.scope_declare(name.clone(), pos)?;
-                Ok(ObjDestructItem::NameMap(key, name))
+                Ok(ObjDestructItem::NameMap(key, Ident { name, pos }))
             }
             _ => {
                 Err(Error::Expected {
@@ -278,10 +314,8 @@ impl Parser {
 
     fn parse_fndef_stmt(&mut self) -> Result<Stmt, Error> {
         let kwfn = self.expect(TokenType::KwFn)?.pos;
-        let ident = self.expect(TokenType::Ident)?;
-        let ident_name = ident.lit;
-        let ident_pos = ident.pos;
-        self.scope_declare(ident_name.clone(), ident_pos)?;
+        let name = self.parse_ident()?;
+        self.scope_declare(name.name.clone(), name.pos)?;
         self.open_scope();
         let oparen = self.expect(TokenType::OParen)?.pos;
         let args = self.parse_fnarg_list()?;
@@ -290,12 +324,13 @@ impl Parser {
         }
         let cparen = self.expect(TokenType::CParen)?.pos;
         let obrace = self.expect(TokenType::OBrace)?.pos;
-        let body = self.parse_stmt_list(vec![TokenType::CBrace])?;
+        self.func_depth += 1;
+        let body = self.parse_stmt_list(&[TokenType::CBrace])?;
+        self.func_depth -= 1;
         let cbrace = self.expect(TokenType::CBrace)?.pos;
         let stmt = Stmt::FnDef {
             kwfn,
-            ident_pos,
-            ident_name,
+            name,
             oparen,
             args,
             cparen,
@@ -310,36 +345,75 @@ impl Parser {
 
     fn parse_if_stmt(&mut self) -> Result<Stmt, Error> {
         let mut head = Vec::<IfBlock>::with_capacity(1);
-        head.push(IfBlock {
-            kw_typ: TokenType::KwIf,
-            kw_pos: self.expect(TokenType::KwIf)?.pos,
-            cond:   Box::new(self.parse_expr(0)?),
-            obrace: self.expect(TokenType::OBrace)?.pos,
-            body:   self.parse_stmt_list(vec![TokenType::CBrace])?,
-            cbrace: self.expect(TokenType::CBrace)?.pos,
-        });
+        head.push(self.parse_if_block(true)?);
         while self.peek_t.typ == TokenType::KwElif {
-            head.push(IfBlock {
-                kw_typ: TokenType::KwElif,
-                kw_pos: self.expect(TokenType::KwElif)?.pos,
-                cond:   Box::new(self.parse_expr(0)?),
-                obrace: self.expect(TokenType::OBrace)?.pos,
-                body:   self.parse_stmt_list(vec![TokenType::CBrace])?,
-                cbrace: self.expect(TokenType::CBrace)?.pos,
-            });
+            head.push(self.parse_if_block(false)?);
         }
         Ok(Stmt::If {
             head,
             tail: if self.peek_t.typ == TokenType::KwElse {
-                Some(ElseBlock {
-                    kwelse: self.expect(TokenType::KwElse)?.pos,
-                    obrace: self.expect(TokenType::OBrace)?.pos,
-                    body:   self.parse_stmt_list(vec![TokenType::CBrace])?,
-                    cbrace: self.expect(TokenType::CBrace)?.pos,
-                })
+                Some(self.parse_else_block()?)
             } else {
                 None
             },
+        })
+    }
+
+    fn parse_if_block(&mut self, first: bool) -> Result<IfBlock, Error> {
+        let kw_tok = self.expect(
+            if first {
+                TokenType::KwIf
+            } else {
+                TokenType::KwElif
+            },
+        )?;
+        let cond = Box::new(self.parse_expr(0)?);
+        let obrace = self.expect(TokenType::OBrace)?.pos;
+        self.open_scope();
+        let body = self.parse_stmt_list(&[TokenType::CBrace])?;
+        self.close_scope();
+        let cbrace = self.expect(TokenType::CBrace)?.pos;
+        Ok(IfBlock {
+            kw_typ: kw_tok.typ,
+            kw_pos: kw_tok.pos,
+            cond,
+            obrace,
+            body,
+            cbrace,
+        })
+    }
+
+    fn parse_else_block(&mut self) -> Result<ElseBlock, Error> {
+        let kwelse = self.expect(TokenType::KwElse)?.pos;
+        let obrace = self.expect(TokenType::OBrace)?.pos;
+        self.open_scope();
+        let body = self.parse_stmt_list(&[TokenType::CBrace])?;
+        self.close_scope();
+        let cbrace = self.expect(TokenType::CBrace)?.pos;
+        Ok(ElseBlock {
+            kwelse,
+            obrace,
+            body,
+            cbrace,
+        })
+    }
+
+    fn parse_while_stmt(&mut self) -> Result<Stmt, Error> {
+        let kwwhile = self.expect(TokenType::KwWhile)?.pos;
+        let cond = Box::new(self.parse_expr(0)?);
+        let obrace = self.expect(TokenType::OBrace)?.pos;
+        self.open_scope();
+        self.loop_depth += 1;
+        let body = self.parse_stmt_list(&[TokenType::CBrace])?;
+        self.loop_depth -= 1;
+        self.close_scope();
+        let cbrace = self.expect(TokenType::CBrace)?.pos;
+        Ok(Stmt::While {
+            kwwhile,
+            cond,
+            obrace,
+            body,
+            cbrace,
         })
     }
 
@@ -491,7 +565,7 @@ impl Parser {
                 }
                 let cparen = self.expect(TokenType::CParen)?.pos;
                 let obrace = self.expect(TokenType::OBrace)?.pos;
-                let body = self.parse_stmt_list(vec![TokenType::CBrace])?;
+                let body = self.parse_stmt_list(&[TokenType::CBrace])?;
                 let cbrace = self.expect(TokenType::CBrace)?.pos;
                 let expr = Expr::LitFunc {
                     kwfn,
@@ -510,7 +584,7 @@ impl Parser {
                 let pos = self.cur_t.pos;
                 let name = self.cur_t.lit.clone();
                 self.scope_use(&name, pos)?;
-                Ok(Expr::Ident { pos, name })
+                Ok(Expr::Ident(Ident { pos, name }))
             }
             TokenType::OParen => {
                 Ok(Expr::Paren {
@@ -596,12 +670,11 @@ impl Parser {
 
     fn parse_selector_expr(&mut self, expr: Expr) -> Result<Expr, Error> {
         let dot = self.expect(TokenType::Dot)?.pos;
-        let element_ident = self.expect(TokenType::Ident)?;
+        let selector = self.parse_ident()?;
         Ok(Expr::Selector {
             expr: Box::from(expr),
             dot,
-            elt_name: element_ident.lit,
-            elt_pos: element_ident.pos,
+            selector,
         })
     }
 
@@ -651,6 +724,14 @@ impl Parser {
         Ok(fields)
     }
 
+    fn parse_ident(&mut self) -> Result<Ident, Error> {
+        let tok = self.expect(TokenType::Ident)?;
+        Ok(Ident {
+            name: tok.lit,
+            pos:  tok.pos,
+        })
+    }
+
     fn advance(&mut self) -> Result<(), Error> {
         self.cur_t = std::mem::replace(&mut self.peek_t, self.lex.next()?);
         Ok(())
@@ -672,7 +753,10 @@ impl Parser {
 #[cfg(test)]
 mod test {
     use crate::{
-        ast::Expr,
+        ast::{
+            Expr,
+            Ident,
+        },
         token::TokenType,
     };
 
@@ -887,20 +971,20 @@ mod test {
             is_closure: true, // always true in parse tests
         });
         assert_expr!("a()", Expr::Call {
-            expr:   expr!(Expr::Ident {
+            expr:   expr!(Expr::Ident(Ident {
                 pos:  pos!(0, 1),
                 name: string!("a"),
-            }),
+            })),
             oparen: pos!(1, 1),
             args:   vec![],
             cparen: pos!(2, 1),
         });
         assert_expr!("(a)", Expr::Paren {
             oparen: pos!(0, 1),
-            expr:   expr!(Expr::Ident {
+            expr:   expr!(Expr::Ident(Ident {
                 pos:  pos!(1, 1),
                 name: string!("a"),
-            }),
+            })),
             cparen: pos!(2, 1),
         });
         assert_expr!("-1", Expr::Unary {

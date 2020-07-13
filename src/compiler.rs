@@ -28,8 +28,8 @@ fn compile_stmt(insts: &mut Vec<Inst>, stmt: Stmt) {
         Stmt::Let { target, expr, .. } => {
             compile_expr(insts, simplify_expr(*expr));
             match target {
-                LetTarget::Ident(name) => {
-                    insts.push(Inst::DeclareNamed(name));
+                LetTarget::Ident(ident) => {
+                    insts.push(Inst::DeclareNamed(ident.name));
                 }
                 LetTarget::ArrDestruct(names) => {
                     insts.push(Inst::ArrDestruct(Rc::from(names)));
@@ -40,7 +40,7 @@ fn compile_stmt(insts: &mut Vec<Inst>, stmt: Stmt) {
             }
         }
         Stmt::FnDef {
-            ident_name,
+            name,
             args,
             body,
             is_closure,
@@ -50,16 +50,16 @@ fn compile_stmt(insts: &mut Vec<Inst>, stmt: Stmt) {
                 insts,
                 args,
                 body,
-                Some(ident_name.clone()),
+                Some(name.name.clone()),
                 is_closure,
             );
-            insts.push(Inst::DeclareNamed(ident_name.clone()));
+            insts.push(Inst::DeclareNamed(name.name));
         }
         Stmt::Assignment { target, rhs, .. } => {
             match target {
-                AssignTarget::Ident(name) => {
+                AssignTarget::Ident(ident) => {
                     compile_expr(insts, simplify_expr(*rhs));
-                    insts.push(Inst::StoreNamed(name.clone()));
+                    insts.push(Inst::StoreNamed(ident.name));
                 }
                 AssignTarget::Index(expr, index) => {
                     compile_expr(insts, simplify_expr(*expr));
@@ -67,9 +67,9 @@ fn compile_stmt(insts: &mut Vec<Inst>, stmt: Stmt) {
                     compile_expr(insts, simplify_expr(*rhs));
                     insts.push(Inst::IndexSet);
                 }
-                AssignTarget::Select(expr, elt_name) => {
+                AssignTarget::Select(expr, selector) => {
                     compile_expr(insts, simplify_expr(*expr));
-                    insts.push(Inst::PushStack(Value::from(elt_name)));
+                    insts.push(Inst::PushStack(Value::from(selector.name)));
                     compile_expr(insts, simplify_expr(*rhs));
                     insts.push(Inst::IndexSet);
                 }
@@ -83,23 +83,31 @@ fn compile_stmt(insts: &mut Vec<Inst>, stmt: Stmt) {
                 let branch_idx = insts.len();
                 insts.push(Inst::Noop);
                 let start_idx = insts.len();
-                for stmt in block.body {
-                    compile_stmt(insts, stmt);
-                }
+                insts.push(compile_subframe(block.body, None));
                 escape_indices.push(insts.len());
                 insts.push(Inst::Noop);
                 let after_idx = insts.len();
                 insts[branch_idx] = Inst::Branch(start_idx, after_idx);
             }
             if let Some(else_block) = tail {
-                for stmt in else_block.body {
-                    compile_stmt(insts, stmt);
-                }
+                insts.push(compile_subframe(else_block.body, None));
             }
             let end_idx = insts.len();
             for idx in escape_indices {
                 insts[idx] = Inst::Goto(end_idx);
             }
+        }
+        Stmt::While { cond, body, .. } => {
+            let cond_start_idx = insts.len();
+            compile_expr(insts, simplify_expr(*cond));
+            let cond_branch_idx = insts.len();
+            insts.push(Inst::Noop);
+            let body_frame_idx = insts.len();
+            insts.push(Inst::Noop);
+            insts.push(Inst::Goto(cond_start_idx));
+            let end_idx = insts.len();
+            insts[body_frame_idx] = compile_subframe(body, Some(end_idx));
+            insts[cond_branch_idx] = Inst::Branch(body_frame_idx, end_idx);
         }
         Stmt::Return { expr, .. } => {
             compile_expr(insts, simplify_expr(*expr));
@@ -109,6 +117,7 @@ fn compile_stmt(insts: &mut Vec<Inst>, stmt: Stmt) {
             compile_expr(insts, simplify_expr(*error));
             insts.push(Inst::Throw);
         }
+        Stmt::Break { .. } => insts.push(Inst::Break),
     }
 }
 
@@ -166,7 +175,7 @@ fn compile_expr(insts: &mut Vec<Inst>, expr: Expr) {
             compile_expr(insts, *expr);
             insts.push(Inst::FinishCall);
         }
-        Expr::Ident { name, .. } => insts.push(Inst::LoadNamed(name.clone())),
+        Expr::Ident(ident) => insts.push(Inst::LoadNamed(ident.name)),
         Expr::Paren { expr, .. } => compile_expr(insts, *expr),
         Expr::Binary {
             lhs, rhs, op_typ, ..
@@ -200,9 +209,9 @@ fn compile_expr(insts: &mut Vec<Inst>, expr: Expr) {
             compile_expr(insts, *index);
             insts.push(Inst::Index);
         }
-        Expr::Selector { expr, elt_name, .. } => {
+        Expr::Selector { expr, selector, .. } => {
             compile_expr(insts, *expr);
-            insts.push(Inst::PushStack(Value::from(elt_name)));
+            insts.push(Inst::PushStack(Value::from(selector.name)));
             insts.push(Inst::Index);
         }
     }
@@ -222,14 +231,25 @@ fn compile_func(
     insts.push(Inst::MakeFunc {
         args: args.into_iter().map(|a| a.name.clone()).collect(),
         insts: Rc::from(fn_insts),
-        name,
+        name: name.map(|v| Rc::from(v.as_ref())),
         is_closure,
     });
 }
 
+fn compile_subframe(stmts: Vec<Stmt>, on_break: Option<usize>) -> Inst {
+    let mut sub_insts = Vec::<Inst>::with_capacity(stmts.len());
+    for stmt in stmts {
+        compile_stmt(&mut sub_insts, stmt);
+    }
+    return Inst::Subframe {
+        insts: Rc::from(sub_insts),
+        on_break,
+    };
+}
+
 pub fn compile(src: &str) -> Result<Vec<Inst>, Error> {
     let mut parser = Parser::new(&Code::from(src), true);
-    let stmts = parser.parse_stmt_list(vec![TokenType::EOF])?;
+    let stmts = parser.parse_stmt_list(&[TokenType::EOF])?;
     let mut insts = Vec::<Inst>::new();
     for stmt in stmts {
         compile_stmt(&mut insts, stmt);

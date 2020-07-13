@@ -13,6 +13,12 @@ pub trait Node {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct Ident {
+    pub pos:  Pos,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct IfBlock {
     pub kw_typ: TokenType,
     pub kw_pos: Pos,
@@ -51,22 +57,22 @@ pub enum ObjKey {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AssignTarget {
-    Ident(String),
+    Ident(Ident),
     Index(Box<Expr>, Box<Expr>),
-    Select(Box<Expr>, String),
+    Select(Box<Expr>, Ident),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum LetTarget {
-    Ident(String),
+    Ident(Ident),
     ArrDestruct(Vec<String>),
     ObjDestruct(Vec<ObjDestructItem>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ObjDestructItem {
-    Name(String),
-    NameMap(String, String),
+    Name(Ident),
+    NameMap(String, Ident),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -81,8 +87,7 @@ pub enum Stmt {
     },
     FnDef {
         kwfn:       Pos,
-        ident_pos:  Pos,
-        ident_name: String,
+        name:       Ident,
         oparen:     Pos,
         args:       Vec<FnArg>,
         cparen:     Pos,
@@ -102,6 +107,13 @@ pub enum Stmt {
         head: Vec<IfBlock>,
         tail: Option<ElseBlock>,
     },
+    While {
+        kwwhile: Pos,
+        cond:    Box<Expr>,
+        obrace:  Pos,
+        body:    Vec<Stmt>,
+        cbrace:  Pos,
+    },
     Expr {
         expr: Box<Expr>,
         semi: Pos,
@@ -116,6 +128,10 @@ pub enum Stmt {
         error:   Box<Expr>,
         semi:    Pos,
     },
+    Break {
+        kwbreak: Pos,
+        semi:    Pos,
+    },
 }
 
 impl Display for Stmt {
@@ -124,7 +140,7 @@ impl Display for Stmt {
             Stmt::Let { target, expr, .. } => {
                 match target {
                     LetTarget::Ident(name) => {
-                        write!(f, "let {} = {};", name, expr)
+                        write!(f, "let {} = {};", name.name, expr)
                     }
                     LetTarget::ArrDestruct(names) => {
                         write!(f, "let [")?;
@@ -143,11 +159,11 @@ impl Display for Stmt {
                                 write!(f, ", ")?;
                             }
                             match item {
-                                ObjDestructItem::Name(name) => {
-                                    write!(f, "{}", name)?
+                                ObjDestructItem::Name(ident) => {
+                                    write!(f, "{}", ident.name)?
                                 }
-                                ObjDestructItem::NameMap(key, name) => {
-                                    write!(f, "{:?}: {}", key, name)?
+                                ObjDestructItem::NameMap(key, ident) => {
+                                    write!(f, "{:?}: {}", key, ident.name)?
                                 }
                             }
                         }
@@ -157,24 +173,21 @@ impl Display for Stmt {
             }
             Stmt::Assignment { target, rhs, .. } => {
                 match target {
-                    AssignTarget::Ident(name) => {
-                        write!(f, "{} = {};", name, rhs)
+                    AssignTarget::Ident(ident) => {
+                        write!(f, "{} = {};", ident.name, rhs)
                     }
                     AssignTarget::Index(item, index) => {
                         write!(f, "{}[{}] = {};", item, index, rhs)
                     }
-                    AssignTarget::Select(item, name) => {
-                        write!(f, "{}.{} = {};", item, name, rhs)
+                    AssignTarget::Select(item, ident) => {
+                        write!(f, "{}.{} = {};", item, ident.name, rhs)
                     }
                 }
             }
             Stmt::FnDef {
-                ident_name,
-                args,
-                body,
-                ..
+                name, args, body, ..
             } => {
-                write!(f, "fn {} (", ident_name)?;
+                write!(f, "fn {} (", name.name)?;
                 for (i, arg) in args.iter().enumerate() {
                     if i > 0 {
                         write!(f, ", ")?;
@@ -211,9 +224,17 @@ impl Display for Stmt {
                 }
                 Ok(())
             }
+            Stmt::While { cond, body, .. } => {
+                write!(f, "while {} {{", cond)?;
+                for stmt in body.iter() {
+                    write!(f, "\n\t{}", stmt)?;
+                }
+                write!(f, "\n}}")
+            }
             Stmt::Expr { expr, .. } => write!(f, "{};", expr),
             Stmt::Return { expr, .. } => write!(f, "return {};", expr),
             Stmt::Throw { error, .. } => write!(f, "throw {};", error),
+            Stmt::Break { .. } => write!(f, "break;"),
         }
     }
 }
@@ -251,6 +272,13 @@ impl Node for Stmt {
                 let end = endpos.offset + endpos.length;
                 Pos::span(start, end - start)
             }
+            Stmt::While {
+                kwwhile, cbrace, ..
+            } => {
+                let start = kwwhile.offset;
+                let end = cbrace.offset + cbrace.length;
+                Pos::span(start, end - start)
+            }
             Stmt::Expr { expr, semi } => {
                 let start = expr.pos().offset;
                 let end = semi.offset + semi.length;
@@ -263,6 +291,11 @@ impl Node for Stmt {
             }
             Stmt::Throw { kwthrow, semi, .. } => {
                 let start = kwthrow.offset;
+                let end = semi.offset + semi.length;
+                Pos::span(start, end - start)
+            }
+            Stmt::Break { kwbreak, semi } => {
+                let start = kwbreak.offset;
                 let end = semi.offset + semi.length;
                 Pos::span(start, end - start)
             }
@@ -311,10 +344,7 @@ pub enum Expr {
         cbrace:     Pos,
         is_closure: bool,
     },
-    Ident {
-        pos:  Pos,
-        name: String,
-    },
+    Ident(Ident),
     Paren {
         oparen: Pos,
         expr:   Box<Expr>,
@@ -353,8 +383,7 @@ pub enum Expr {
     Selector {
         expr:     Box<Expr>,
         dot:      Pos,
-        elt_name: String,
-        elt_pos:  Pos,
+        selector: Ident,
     },
 }
 
@@ -432,8 +461,8 @@ impl Display for Expr {
                 }
                 write!(f, "))")?;
             }
-            Expr::Ident { name, .. } => {
-                write!(f, "{}", name)?;
+            Expr::Ident(ident) => {
+                write!(f, "{}", ident.name)?;
             }
             Expr::Paren { expr, .. } => {
                 write!(f, "({})", expr)?;
@@ -454,8 +483,8 @@ impl Display for Expr {
             Expr::Index { expr, index, .. } => {
                 write!(f, "({}[{}])", expr, index)?;
             }
-            Expr::Selector { expr, elt_name, .. } => {
-                write!(f, "({}.{})", expr, elt_name)?;
+            Expr::Selector { expr, selector, .. } => {
+                write!(f, "({}.{})", expr, selector.name)?;
             }
         }
         Ok(())
@@ -487,7 +516,7 @@ impl Node for Expr {
                 let end = cbrace.offset + cbrace.length;
                 Pos::span(start, end - start)
             }
-            Expr::Ident { pos, .. } => *pos,
+            Expr::Ident(Ident { pos, .. }) => *pos,
             Expr::Call { expr, cparen, .. } => {
                 let start = expr.pos().offset;
                 let end = cparen.offset + cparen.length;
@@ -521,9 +550,9 @@ impl Node for Expr {
                 let end = csquare.offset + csquare.length;
                 Pos::span(start, end - start)
             }
-            Expr::Selector { expr, elt_pos, .. } => {
+            Expr::Selector { expr, selector, .. } => {
                 let start = expr.pos().offset;
-                let end = elt_pos.offset + elt_pos.length;
+                let end = selector.pos.offset + selector.pos.length;
                 Pos::span(start, end - start)
             }
         }
@@ -533,8 +562,8 @@ impl Node for Expr {
 impl Expr {
     pub fn get_assign_target(&self) -> Option<(AssignTarget, Pos)> {
         match self {
-            Expr::Ident { name, .. } => {
-                Some((AssignTarget::Ident(name.clone()), self.pos()))
+            Expr::Ident(ident) => {
+                Some((AssignTarget::Ident(ident.clone()), self.pos()))
             }
             Expr::Index { expr, index, .. } => {
                 Some((
@@ -542,9 +571,9 @@ impl Expr {
                     self.pos(),
                 ))
             }
-            Expr::Selector { expr, elt_name, .. } => {
+            Expr::Selector { expr, selector, .. } => {
                 Some((
-                    AssignTarget::Select(expr.clone(), elt_name.clone()),
+                    AssignTarget::Select(expr.clone(), selector.clone()),
                     self.pos(),
                 ))
             }

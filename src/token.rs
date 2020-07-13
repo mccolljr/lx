@@ -71,6 +71,8 @@ pub enum TokenType {
     KwReturn,
     KwNull,
     KwThrow,
+    KwWhile,
+    KwBreak,
 }
 
 impl Display for TokenType {
@@ -116,6 +118,8 @@ impl Display for TokenType {
             KwReturn => write!(f, "return"),
             KwNull => write!(f, "null"),
             KwThrow => write!(f, "throw"),
+            KwWhile => write!(f, "while"),
+            KwBreak => write!(f, "break"),
         }
     }
 }

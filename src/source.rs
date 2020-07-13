@@ -5,35 +5,19 @@ use std::{
         Formatter,
         Result as FmtResult,
     },
-    ops::Deref,
+    ops::{
+        Deref,
+        Index,
+    },
     rc::Rc,
 };
 
-pub struct Code {
-    pub raw: Rc<[char]>,
-    offset:  usize,
-    length:  usize,
-}
-
-impl Clone for Code {
-    fn clone(&self) -> Self {
-        Code {
-            raw:    Rc::clone(&self.raw),
-            offset: self.offset,
-            length: self.length,
-        }
-    }
-}
+#[derive(Clone)]
+pub struct Code(Rc<[char]>);
 
 impl Debug for Code {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
-        write!(
-            f,
-            "Source(raw: [char; {}], offset: {}, length: {})",
-            self.raw.len(),
-            self.offset,
-            self.length
-        )
+        write!(f, "Code(Rc<[char; {}]>)", self.0.len(),)
     }
 }
 
@@ -48,22 +32,28 @@ where
     T: AsRef<str>,
 {
     fn from(src: T) -> Self {
-        let chars = src.as_ref().chars().collect::<Vec<char>>();
-        let char_count = chars.len();
-        Code {
-            raw:    Rc::from(chars),
-            offset: 0,
-            length: char_count,
-        }
+        Self(Rc::from(src.as_ref().chars().collect::<Vec<char>>()))
     }
 }
 
 impl Deref for Code {
     type Target = [char];
 
-    fn deref(&self) -> &Self::Target {
-        &(self.raw[self.offset..self.offset + self.length])
+    fn deref(&self) -> &Self::Target { self.0.as_ref() }
+}
+
+impl Index<Pos> for Code {
+    type Output = [char];
+
+    fn index(&self, index: Pos) -> &Self::Output {
+        &self.0.as_ref()[index.offset..(index.offset + index.length)]
     }
+}
+
+impl Index<usize> for Code {
+    type Output = char;
+
+    fn index(&self, index: usize) -> &Self::Output { &self.0.as_ref()[index] }
 }
 
 #[cfg(test)]
@@ -73,10 +63,7 @@ mod tests {
     #[test]
     fn test_code() {
         let s = Code::from("abcdef");
-        assert_eq!(
-            format!("{:?}", s),
-            "Source(raw: [char; 6], offset: 0, length: 6)"
-        );
+        assert_eq!(format!("{:?}", s), "Code(Rc<[char; 6]>)");
         assert_eq!(format!("{}", s), "abcdef");
         assert_eq!(s.len(), 6);
         assert_eq!(s[0], 'a');

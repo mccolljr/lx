@@ -73,9 +73,9 @@ fn const_val(x: &Expr) -> Option<Value> {
                 None => None,
             }
         }
-        Expr::Selector { expr, elt_name, .. } => {
+        Expr::Selector { expr, selector, .. } => {
             const_val(expr.as_ref())?
-                .op_index(&Value::Str(elt_name.clone()))
+                .op_index(&Value::Str(selector.name.clone()))
                 .map_or(None, |v| Some(v))
         }
         Expr::Index { expr, index, .. } => {

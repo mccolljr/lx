@@ -19,7 +19,7 @@ use std::{
 #[derive(Clone)]
 pub struct Func {
     vm:      Rc<VMState>,
-    name:    String,
+    name:    Rc<str>,
     args:    Rc<[String]>,
     insts:   Rc<[Inst]>,
     closure: Option<Rc<Scope>>,
@@ -61,22 +61,20 @@ impl Eq for Func {}
 
 impl Func {
     pub fn new(
-        name: impl Into<String>,
+        name: impl AsRef<str>,
         vm: Rc<VMState>,
         args: Rc<[String]>,
         insts: Rc<[Inst]>,
         closure: Option<Rc<Scope>>,
     ) -> Self {
         Func {
-            name: name.into(),
+            name: Rc::from(name.as_ref()),
             vm,
             args,
             insts,
             closure,
         }
     }
-
-    // pub fn name(&self) -> &str { self.name.as_ref() }
 
     pub fn call(&self, args: Vec<Value>) -> Result<Value, Error> {
         if args.len() != self.args.len() {
@@ -100,7 +98,7 @@ impl Func {
 
 #[derive(Clone)]
 pub struct NativeFunc {
-    name:  String,
+    name:  Rc<str>,
     fnptr: fn(Vec<Value>) -> Result<Value, Error>,
 }
 
@@ -123,11 +121,11 @@ impl Eq for NativeFunc {}
 
 impl NativeFunc {
     pub fn new(
-        name: impl Into<String>,
+        name: impl AsRef<str>,
         fnptr: fn(Vec<Value>) -> Result<Value, Error>,
     ) -> Self {
         NativeFunc {
-            name: name.into(),
+            name: Rc::from(name.as_ref()),
             fnptr,
         }
     }

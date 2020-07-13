@@ -24,8 +24,12 @@ pub enum Inst {
     MakeFunc {
         args:       Vec<String>,
         insts:      Rc<[Inst]>,
-        name:       Option<String>,
+        name:       Option<Rc<str>>,
         is_closure: bool,
+    },
+    Subframe {
+        insts:    Rc<[Inst]>,
+        on_break: Option<usize>,
     },
     InitCall,
     AddCallArg,
@@ -36,4 +40,5 @@ pub enum Inst {
     Index,
     IndexSet,
     Throw,
+    Break,
 }

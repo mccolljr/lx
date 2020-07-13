@@ -43,4 +43,9 @@ pub enum Error {
         at:   Pos,
         name: String,
     },
+
+    NotAllowed {
+        at:   Pos,
+        what: String,
+    },
 }
