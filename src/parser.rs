@@ -93,12 +93,12 @@ pub struct Parser {
 }
 
 impl Parser {
-    pub fn new(src: &Code, withScopeTracking: bool) -> Self {
+    pub fn new(src: &Code, with_scope_tracking: bool) -> Self {
         let mut p = Parser {
             lex:    Lexer::new(src),
             cur_t:  Token::new_meta(0, TokenType::EOF),
             peek_t: Token::new_meta(0, TokenType::EOF),
-            scope:  if withScopeTracking {
+            scope:  if with_scope_tracking {
                 Some(ParseScope::create(Some(ParseScope::global())))
             } else {
                 None
