@@ -1,5 +1,5 @@
-use super::{
-    errors::Error,
+use crate::{
+    error::SyntaxError,
     source::{
         Code,
         Pos,
@@ -31,7 +31,7 @@ impl Lexer {
         }
     }
 
-    pub fn next(&mut self) -> Result<Token, Error> {
+    pub fn next(&mut self) -> Result<Token, SyntaxError> {
         self.advance();
         while self.cur_c.is_ascii_whitespace() {
             self.advance()
@@ -75,7 +75,7 @@ impl Lexer {
             '=' => self.lex_2(&[('=', OpEq)], Assign),
             '!' => self.lex_2(&[('=', OpNeq)], Bang),
             _ => {
-                Err(Error::InvalidCharacter {
+                Err(SyntaxError::InvalidCharacter {
                     at: Pos::one(self.cur_i),
                     ch: self.cur_c,
                 })
@@ -102,7 +102,7 @@ impl Lexer {
     fn peek_eof(&self) -> bool { self.peek_i >= self.src.len() }
 
     #[inline]
-    fn lex_1(&self, typ: TokenType) -> Result<Token, Error> {
+    fn lex_1(&self, typ: TokenType) -> Result<Token, SyntaxError> {
         let pos = Pos::one(self.cur_i);
         Ok(Token::new(
             pos,
@@ -116,7 +116,7 @@ impl Lexer {
         &mut self,
         opts: &[(char, TokenType)],
         fallback: TokenType,
-    ) -> Result<Token, Error> {
+    ) -> Result<Token, SyntaxError> {
         for (c, typ) in opts {
             if self.peek_c == *c {
                 let start = self.cur_i;
@@ -132,7 +132,7 @@ impl Lexer {
         self.lex_1(fallback)
     }
 
-    fn lex_number(&mut self) -> Result<Token, Error> {
+    fn lex_number(&mut self) -> Result<Token, SyntaxError> {
         let start = self.cur_i;
         let mut has_decimal = false;
         let mut has_exp = false;
@@ -142,7 +142,7 @@ impl Lexer {
         {
             if self.peek_c == 'e' {
                 if has_exp {
-                    return Err(Error::UnexpectedCharacter {
+                    return Err(SyntaxError::UnexpectedCharacter {
                         at:      Pos::one(self.peek_i),
                         ch:      self.peek_c,
                         context: "numeric literal",
@@ -153,7 +153,7 @@ impl Lexer {
 
             if self.peek_c == '.' {
                 if has_exp || has_decimal {
-                    return Err(Error::UnexpectedCharacter {
+                    return Err(SyntaxError::UnexpectedCharacter {
                         at:      Pos::one(self.peek_i),
                         ch:      self.peek_c,
                         context: "numeric literal",
@@ -177,7 +177,7 @@ impl Lexer {
         ))
     }
 
-    fn lex_bool_ident_or_keyword(&mut self) -> Result<Token, Error> {
+    fn lex_bool_ident_or_keyword(&mut self) -> Result<Token, SyntaxError> {
         let start = self.cur_i;
 
         while !self.peek_eof()
@@ -209,7 +209,7 @@ impl Lexer {
         ))
     }
 
-    fn lex_string(&mut self) -> Result<Token, Error> {
+    fn lex_string(&mut self) -> Result<Token, SyntaxError> {
         let start = self.cur_i;
         let quote = self.cur_c;
         let mut lit = String::with_capacity(16);
@@ -233,7 +233,7 @@ impl Lexer {
             self.advance();
         }
 
-        Err(Error::UnterminatedStringLiteral {
+        Err(SyntaxError::UnterminatedStringLiteral {
             at: Pos::mark(start),
         })
     }
@@ -243,10 +243,10 @@ impl Lexer {
         start: usize,
         quote: char,
         lit: &mut String,
-    ) -> Result<(), Error> {
+    ) -> Result<(), SyntaxError> {
         self.advance();
         if self.at_eof() {
-            return Err(Error::UnterminatedStringLiteral {
+            return Err(SyntaxError::UnterminatedStringLiteral {
                 at: Pos::mark(start),
             });
         }
@@ -270,7 +270,7 @@ impl Lexer {
                 Ok(())
             }
             _ => {
-                Err(Error::InvalidEscapeSequence {
+                Err(SyntaxError::InvalidEscapeSequence {
                     at: Pos::one(self.cur_i),
                     ch: self.cur_c,
                 })

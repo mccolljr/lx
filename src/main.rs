@@ -1,7 +1,10 @@
+#[macro_use]
+extern crate quick_error;
+
 mod ast;
 mod ast_rewrite;
 mod compiler;
-mod errors;
+mod error;
 mod lexer;
 mod parser;
 mod runtime;
@@ -21,22 +24,6 @@ fn main() {
     let vm = VM::new(
         compile(
             "
-            let x = 0;
-            while true {
-                x = x + 1;
-                let y = 0;
-                while true {
-                    y = y + 1;
-                    print(y);
-                    if y >= x {
-                        break;
-                    }
-                }
-                print(x);
-                if x >= 10 {
-                    break;
-                }
-            }
             ",
         )
         .expect("compilation error"),

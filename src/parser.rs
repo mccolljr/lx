@@ -1,5 +1,18 @@
-use super::{
-    errors::Error,
+use crate::{
+    ast::{
+        ElseBlock,
+        Expr,
+        FnArg,
+        Ident,
+        IfBlock,
+        LetTarget,
+        Node,
+        ObjDestructItem,
+        ObjField,
+        ObjKey,
+        Stmt,
+    },
+    error::SyntaxError,
     lexer::Lexer,
     source::{
         Code,
@@ -9,19 +22,6 @@ use super::{
         Token,
         TokenType,
     },
-};
-use crate::ast::{
-    ElseBlock,
-    Expr,
-    FnArg,
-    Ident,
-    IfBlock,
-    LetTarget,
-    Node,
-    ObjDestructItem,
-    ObjField,
-    ObjKey,
-    Stmt,
 };
 use std::{
     cell::RefCell,
@@ -55,15 +55,15 @@ impl ParseScope {
         self.decls.borrow().get(name).map(|pos| *pos)
     }
 
-    fn declare(&self, name: String, at: Pos) -> Result<(), Error> {
+    fn declare(&self, name: String, at: Pos) -> Result<(), SyntaxError> {
         if let Some(original) = self.get_local_decl(&name) {
-            return Err(Error::Redeclaration { at, original, name });
+            return Err(SyntaxError::Redeclaration { at, original, name });
         }
         self.decls.borrow_mut().insert(name, at);
         Ok(())
     }
 
-    fn utilize(&self, name: &String, pos: Pos) -> Result<(), Error> {
+    fn utilize(&self, name: &String, pos: Pos) -> Result<(), SyntaxError> {
         if self.get_local_decl(name).is_some() {
             // found in local scope
             return Ok(());
@@ -79,7 +79,7 @@ impl ParseScope {
             return Ok(());
         }
 
-        Err(Error::Undeclared {
+        Err(SyntaxError::Undeclared {
             at:   pos,
             name: name.clone(),
         })
@@ -125,14 +125,22 @@ impl Parser {
         }
     }
 
-    fn scope_declare(&mut self, name: String, pos: Pos) -> Result<(), Error> {
+    fn scope_declare(
+        &mut self,
+        name: String,
+        pos: Pos,
+    ) -> Result<(), SyntaxError> {
         if let Some(scope) = &self.scope {
             return scope.declare(name, pos);
         }
         Ok(())
     }
 
-    fn scope_use(&mut self, name: &String, pos: Pos) -> Result<(), Error> {
+    fn scope_use(
+        &mut self,
+        name: &String,
+        pos: Pos,
+    ) -> Result<(), SyntaxError> {
         if let Some(scope) = &self.scope {
             return scope.utilize(name, pos);
         }
@@ -149,7 +157,7 @@ impl Parser {
     pub fn parse_stmt_list(
         &mut self,
         terminators: &[TokenType],
-    ) -> Result<Vec<Stmt>, Error> {
+    ) -> Result<Vec<Stmt>, SyntaxError> {
         let mut stmts: Vec<Stmt> = Vec::with_capacity(3);
         while !terminators.contains(&self.peek_t.typ) {
             stmts.push(self.parse_stmt()?);
@@ -157,7 +165,7 @@ impl Parser {
         Ok(stmts)
     }
 
-    fn parse_stmt(&mut self) -> Result<Stmt, Error> {
+    fn parse_stmt(&mut self) -> Result<Stmt, SyntaxError> {
         match self.peek_t.typ {
             TokenType::KwLet => self.parse_let_stmt(),
             TokenType::KwFn => self.parse_fndef_stmt(),
@@ -167,7 +175,7 @@ impl Parser {
                 if self.func_depth > 0 {
                     self.parse_return_stmt()
                 } else {
-                    Err(Error::NotAllowed {
+                    Err(SyntaxError::NotAllowed {
                         at:   self.peek_t.pos,
                         what: String::from(
                             "return not allowed outside of function",
@@ -182,7 +190,7 @@ impl Parser {
                         semi:    self.expect(TokenType::Semi)?.pos,
                     })
                 } else {
-                    Err(Error::NotAllowed {
+                    Err(SyntaxError::NotAllowed {
                         at:   self.peek_t.pos,
                         what: String::from("break not allowed outside of loop"),
                     })
@@ -193,7 +201,7 @@ impl Parser {
         }
     }
 
-    fn parse_let_stmt(&mut self) -> Result<Stmt, Error> {
+    fn parse_let_stmt(&mut self) -> Result<Stmt, SyntaxError> {
         self.expect(TokenType::KwLet)?;
         let kwlet = self.cur_t.pos;
         let (target, target_pos) = self.parse_let_target()?;
@@ -210,7 +218,7 @@ impl Parser {
         })
     }
 
-    fn parse_let_target(&mut self) -> Result<(LetTarget, Pos), Error> {
+    fn parse_let_target(&mut self) -> Result<(LetTarget, Pos), SyntaxError> {
         match self.peek_t.typ {
             TokenType::Ident => {
                 let Token { lit: name, pos, .. } =
@@ -256,7 +264,7 @@ impl Parser {
                 ))
             }
             _ => {
-                Err(Error::Expected {
+                Err(SyntaxError::Expected {
                     at:     self.peek_t.pos,
                     wanted: "ident, array destructure, or object destructure"
                         .into(),
@@ -266,7 +274,9 @@ impl Parser {
         }
     }
 
-    fn parse_object_destruct_item(&mut self) -> Result<ObjDestructItem, Error> {
+    fn parse_object_destruct_item(
+        &mut self,
+    ) -> Result<ObjDestructItem, SyntaxError> {
         match self.peek_t.typ {
             TokenType::Ident => {
                 // can be Name or NameMap
@@ -303,7 +313,7 @@ impl Parser {
                 Ok(ObjDestructItem::NameMap(key, Ident { name, pos }))
             }
             _ => {
-                Err(Error::Expected {
+                Err(SyntaxError::Expected {
                     at:     self.peek_t.pos,
                     wanted: "object destrucruting item".into(),
                     found:  format!("{}", self.peek_t.typ),
@@ -312,7 +322,7 @@ impl Parser {
         }
     }
 
-    fn parse_fndef_stmt(&mut self) -> Result<Stmt, Error> {
+    fn parse_fndef_stmt(&mut self) -> Result<Stmt, SyntaxError> {
         let kwfn = self.expect(TokenType::KwFn)?.pos;
         let name = self.parse_ident()?;
         self.scope_declare(name.name.clone(), name.pos)?;
@@ -343,7 +353,7 @@ impl Parser {
         Ok(stmt)
     }
 
-    fn parse_if_stmt(&mut self) -> Result<Stmt, Error> {
+    fn parse_if_stmt(&mut self) -> Result<Stmt, SyntaxError> {
         let mut head = Vec::<IfBlock>::with_capacity(1);
         head.push(self.parse_if_block(true)?);
         while self.peek_t.typ == TokenType::KwElif {
@@ -359,7 +369,7 @@ impl Parser {
         })
     }
 
-    fn parse_if_block(&mut self, first: bool) -> Result<IfBlock, Error> {
+    fn parse_if_block(&mut self, first: bool) -> Result<IfBlock, SyntaxError> {
         let kw_tok = self.expect(
             if first {
                 TokenType::KwIf
@@ -383,7 +393,7 @@ impl Parser {
         })
     }
 
-    fn parse_else_block(&mut self) -> Result<ElseBlock, Error> {
+    fn parse_else_block(&mut self) -> Result<ElseBlock, SyntaxError> {
         let kwelse = self.expect(TokenType::KwElse)?.pos;
         let obrace = self.expect(TokenType::OBrace)?.pos;
         self.open_scope();
@@ -398,7 +408,7 @@ impl Parser {
         })
     }
 
-    fn parse_while_stmt(&mut self) -> Result<Stmt, Error> {
+    fn parse_while_stmt(&mut self) -> Result<Stmt, SyntaxError> {
         let kwwhile = self.expect(TokenType::KwWhile)?.pos;
         let cond = Box::new(self.parse_expr(0)?);
         let obrace = self.expect(TokenType::OBrace)?.pos;
@@ -417,7 +427,7 @@ impl Parser {
         })
     }
 
-    fn parse_return_stmt(&mut self) -> Result<Stmt, Error> {
+    fn parse_return_stmt(&mut self) -> Result<Stmt, SyntaxError> {
         let kwreturn = self.expect(TokenType::KwReturn)?.pos;
         Ok(Stmt::Return {
             kwreturn,
@@ -426,7 +436,7 @@ impl Parser {
         })
     }
 
-    fn parse_throw_stmt(&mut self) -> Result<Stmt, Error> {
+    fn parse_throw_stmt(&mut self) -> Result<Stmt, SyntaxError> {
         let kwthrow = self.expect(TokenType::KwThrow)?.pos;
         Ok(Stmt::Throw {
             kwthrow,
@@ -435,7 +445,7 @@ impl Parser {
         })
     }
 
-    fn parse_expr_or_assignment_stmt(&mut self) -> Result<Stmt, Error> {
+    fn parse_expr_or_assignment_stmt(&mut self) -> Result<Stmt, SyntaxError> {
         let x = self.parse_expr(0)?;
         if self.peek_t.typ == TokenType::Assign {
             if let Some((target, target_pos)) = x.get_assign_target() {
@@ -447,7 +457,7 @@ impl Parser {
                     semi: self.expect(TokenType::Semi)?.pos,
                 });
             }
-            return Err(Error::InvalidAssignment {
+            return Err(SyntaxError::InvalidAssignment {
                 at:    x.pos(),
                 found: format!("{}", x),
             });
@@ -461,7 +471,7 @@ impl Parser {
     fn parse_expr_list(
         &mut self,
         terminators: Vec<TokenType>,
-    ) -> Result<Vec<Expr>, Error> {
+    ) -> Result<Vec<Expr>, SyntaxError> {
         let mut exprs: Vec<Expr> = Vec::with_capacity(3);
         while !terminators.contains(&self.peek_t.typ) {
             if exprs.len() > 0 {
@@ -472,7 +482,10 @@ impl Parser {
         Ok(exprs)
     }
 
-    fn parse_expr(&mut self, min_binding_power: i32) -> Result<Expr, Error> {
+    fn parse_expr(
+        &mut self,
+        min_binding_power: i32,
+    ) -> Result<Expr, SyntaxError> {
         let mut x: Expr = match self.peek_t.typ.prefix_binding_power() {
             Some((_, prefix_rbp)) => {
                 self.advance()?;
@@ -523,7 +536,7 @@ impl Parser {
         Ok(x)
     }
 
-    fn parse_primary_expr(&mut self) -> Result<Expr, Error> {
+    fn parse_primary_expr(&mut self) -> Result<Expr, SyntaxError> {
         self.advance()?;
         match self.cur_t.typ {
             TokenType::KwNull => {
@@ -565,7 +578,9 @@ impl Parser {
                 }
                 let cparen = self.expect(TokenType::CParen)?.pos;
                 let obrace = self.expect(TokenType::OBrace)?.pos;
+                self.func_depth += 1;
                 let body = self.parse_stmt_list(&[TokenType::CBrace])?;
+                self.func_depth -= 1;
                 let cbrace = self.expect(TokenType::CBrace)?.pos;
                 let expr = Expr::LitFunc {
                     kwfn,
@@ -608,7 +623,7 @@ impl Parser {
                 })
             }
             _ => {
-                Err(Error::Expected {
+                Err(SyntaxError::Expected {
                     at:     self.cur_t.pos,
                     wanted: "expression".into(),
                     found:  format!("{:?}", self.cur_t.typ),
@@ -617,7 +632,7 @@ impl Parser {
         }
     }
 
-    fn parse_call(&mut self, expr: Expr) -> Result<Expr, Error> {
+    fn parse_call(&mut self, expr: Expr) -> Result<Expr, SyntaxError> {
         let oparen = self.expect(TokenType::OParen)?.pos;
         let args = self.parse_expr_list(vec![TokenType::CParen])?;
         let cparen = self.expect(TokenType::CParen)?.pos;
@@ -629,7 +644,7 @@ impl Parser {
         })
     }
 
-    fn parse_fnarg_list(&mut self) -> Result<Vec<FnArg>, Error> {
+    fn parse_fnarg_list(&mut self) -> Result<Vec<FnArg>, SyntaxError> {
         let mut args = Vec::<FnArg>::with_capacity(1);
         loop {
             if self.peek_t.typ == TokenType::Ident {
@@ -648,7 +663,7 @@ impl Parser {
         Ok(args)
     }
 
-    fn parse_ternary(&mut self, cond: Expr) -> Result<Expr, Error> {
+    fn parse_ternary(&mut self, cond: Expr) -> Result<Expr, SyntaxError> {
         let (_, rbp) = TokenType::Question.infix_binding_power().unwrap();
         Ok(Expr::Ternary {
             cond:     Box::new(cond),
@@ -659,7 +674,7 @@ impl Parser {
         })
     }
 
-    fn parse_index(&mut self, expr: Expr) -> Result<Expr, Error> {
+    fn parse_index(&mut self, expr: Expr) -> Result<Expr, SyntaxError> {
         Ok(Expr::Index {
             expr:    Box::from(expr),
             osquare: self.expect(TokenType::OSquare)?.pos,
@@ -668,7 +683,7 @@ impl Parser {
         })
     }
 
-    fn parse_selector_expr(&mut self, expr: Expr) -> Result<Expr, Error> {
+    fn parse_selector_expr(&mut self, expr: Expr) -> Result<Expr, SyntaxError> {
         let dot = self.expect(TokenType::Dot)?.pos;
         let selector = self.parse_ident()?;
         Ok(Expr::Selector {
@@ -678,7 +693,7 @@ impl Parser {
         })
     }
 
-    fn parse_field_list(&mut self) -> Result<Vec<ObjField>, Error> {
+    fn parse_field_list(&mut self) -> Result<Vec<ObjField>, SyntaxError> {
         let mut fields = Vec::<ObjField>::new();
         loop {
             match self.peek_t.typ {
@@ -709,7 +724,7 @@ impl Parser {
                     });
                 }
                 _ => {
-                    return Err(Error::Expected {
+                    return Err(SyntaxError::Expected {
                         at:     self.peek_t.pos,
                         wanted: "field key".into(),
                         found:  format!("{:?}", self.peek_t.typ),
@@ -724,7 +739,7 @@ impl Parser {
         Ok(fields)
     }
 
-    fn parse_ident(&mut self) -> Result<Ident, Error> {
+    fn parse_ident(&mut self) -> Result<Ident, SyntaxError> {
         let tok = self.expect(TokenType::Ident)?;
         Ok(Ident {
             name: tok.lit,
@@ -732,15 +747,15 @@ impl Parser {
         })
     }
 
-    fn advance(&mut self) -> Result<(), Error> {
+    fn advance(&mut self) -> Result<(), SyntaxError> {
         self.cur_t = std::mem::replace(&mut self.peek_t, self.lex.next()?);
         Ok(())
     }
 
-    fn expect(&mut self, expected: TokenType) -> Result<Token, Error> {
+    fn expect(&mut self, expected: TokenType) -> Result<Token, SyntaxError> {
         self.advance()?;
         if self.cur_t.typ != expected {
-            return Err(Error::Expected {
+            return Err(SyntaxError::Expected {
                 at:     self.cur_t.pos,
                 wanted: format!("{:?}", expected),
                 found:  format!("{:?}", self.cur_t.typ),

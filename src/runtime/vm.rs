@@ -1,6 +1,5 @@
 use super::{
     super::ast::ObjDestructItem,
-    error::Error,
     inst::Inst,
     scope::Scope,
     value::{
@@ -9,6 +8,11 @@ use super::{
         Object,
         Value,
     },
+};
+use crate::error::{
+    Error,
+    Panic,
+    RuntimeError,
 };
 use std::{
     cell::RefCell,
@@ -69,7 +73,7 @@ impl VMState {
         if let Some(popped) = stack.pop() {
             Ok(popped)
         } else {
-            Err(Error::StackUnderflow)
+            Err(Panic::StackUnderflow.into())
         }
     }
 
@@ -122,10 +126,11 @@ impl VMState {
                             scope.declare(name.clone(), arr.index_get(i));
                         }
                     } else {
-                        return Err(Error::InvalidOperation(format!(
+                        return Err(RuntimeError::InvalidOperation(format!(
                             "can't destructure {:?} as an array",
                             source
-                        )));
+                        ))
+                        .into());
                     }
                 }
                 Inst::ObjDestruct(items) => {
@@ -148,10 +153,11 @@ impl VMState {
                             }
                         }
                     } else {
-                        return Err(Error::InvalidOperation(format!(
+                        return Err(RuntimeError::InvalidOperation(format!(
                             "can't destructure {:?} as an object",
                             source
-                        )));
+                        ))
+                        .into());
                     }
                 }
                 Inst::BinaryOp(typ) => {
@@ -206,14 +212,20 @@ impl VMState {
                         self.push_stack(arg)?;
                         self.push_stack(Value::Int(argct + 1))?;
                     } else {
-                        return Err(Error::MalformedStackPanic);
+                        return Err(Panic::MalformedStack(
+                            "invalid argct when adding arg",
+                        )
+                        .into());
                     };
                 }
                 Inst::FinishCall => {
                     let target = self.pop_stack()?;
                     if let Value::Int(argct) = self.pop_stack()? {
                         if argct < 0 {
-                            return Err(Error::MalformedStackPanic);
+                            return Err(Panic::MalformedStack(
+                                "negative argct when finishing call",
+                            )
+                            .into());
                         }
                         let mut args =
                             Vec::<Value>::with_capacity(argct as usize);
@@ -223,7 +235,10 @@ impl VMState {
                         args.reverse();
                         self.push_stack(target.call(args)?)?;
                     } else {
-                        return Err(Error::MalformedStackPanic);
+                        return Err(Panic::MalformedStack(
+                            "non-integer argct when finishing call",
+                        )
+                        .into());
                     }
                 }
                 Inst::Return => {
@@ -242,7 +257,12 @@ impl VMState {
                             }
                             self.push_stack(Value::Object(obj))?;
                         }
-                        _ => return Err(Error::MalformedStackPanic),
+                        _ => {
+                            return Err(Panic::MalformedStack(
+                                "invalid field count when building object",
+                            )
+                            .into())
+                        }
                     }
                 }
                 Inst::BuildArray => {
@@ -254,7 +274,12 @@ impl VMState {
                             }
                             self.push_stack(Value::Array(arr))?;
                         }
-                        _ => return Err(Error::MalformedStackPanic),
+                        _ => {
+                            return Err(Panic::MalformedStack(
+                                "invalid element count when building array",
+                            )
+                            .into())
+                        }
                     }
                 }
                 Inst::Index => {
@@ -269,9 +294,10 @@ impl VMState {
                     target.op_index_set(&index, &value)?;
                 }
                 Inst::Throw => {
-                    return Err(Error::RuntimeError(
+                    return Err(RuntimeError::Generic(
                         self.pop_stack()?.to_string(),
-                    ));
+                    )
+                    .into());
                 }
                 Inst::Break => {
                     exit_status = FrameStatus::Broke;

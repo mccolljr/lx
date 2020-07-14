@@ -1,11 +1,14 @@
 use super::{
     super::{
-        error::Error,
         inst::Inst,
         scope::Scope,
         vm::VMState,
     },
     value::Value,
+};
+use crate::error::{
+    Error,
+    RuntimeError,
 };
 use std::{
     fmt::{
@@ -78,11 +81,12 @@ impl Func {
 
     pub fn call(&self, args: Vec<Value>) -> Result<Value, Error> {
         if args.len() != self.args.len() {
-            return Err(Error::ArgumentError(format!(
+            return Err(RuntimeError::InvalidArguments(format!(
                 "wrong number of arguments: expected {}, got {}",
                 self.args.len(),
                 args.len()
-            )));
+            ))
+            .into());
         }
         let scope = match &self.closure {
             Some(c) => Rc::new(Scope::extend(Rc::clone(&c))),

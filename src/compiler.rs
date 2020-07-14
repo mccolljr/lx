@@ -8,7 +8,7 @@ use super::{
         Stmt,
     },
     ast_rewrite::simplify_expr,
-    errors::Error,
+    error::Error,
     parser::Parser,
     runtime::{
         inst::Inst,

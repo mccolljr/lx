@@ -39,6 +39,12 @@ impl Array {
     }
 
     pub fn index_set(&self, index: usize, val: Value) {
+        let size = self.0.borrow().len();
+        if index >= size {
+            for _ in 0..=(index - size) {
+                self.0.borrow_mut().push_back(Value::Null);
+            }
+        }
         self.0.borrow_mut()[index] = val;
     }
 

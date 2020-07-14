@@ -40,6 +40,17 @@ impl Object {
     pub fn index_set(&self, index: String, val: Value) {
         self.0.borrow_mut().insert(index, val);
     }
+
+    pub fn has_method(&self, name: &String) -> bool {
+        if let Some(v) = self.0.borrow().get(name) {
+            return match v {
+                Value::Func { .. } => true,
+                Value::NativeFunc { .. } => true,
+                _ => false,
+            };
+        }
+        false
+    }
 }
 
 impl IntoIterator for Object {

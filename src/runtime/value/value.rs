@@ -1,14 +1,18 @@
 use super::{
-    super::{
-        super::token::TokenType,
-        error::Error,
-    },
     array::Array,
     funcs::{
         Func,
         NativeFunc,
     },
     object::Object,
+};
+
+use crate::{
+    error::{
+        Error,
+        RuntimeError,
+    },
+    token::TokenType,
 };
 
 #[derive(Clone, Debug)]
@@ -93,10 +97,11 @@ impl Value {
             (Array(arr), Flt(f)) => Ok(arr.index_get(*f as i64 as usize)),
             (Object(obj), key) => Ok(obj.index_get(&key.to_string())),
             _ => {
-                Err(Error::InvalidOperation(format!(
+                Err(RuntimeError::InvalidOperation(format!(
                     "can't index {:?} with {:?}",
                     self, index
-                )))
+                ))
+                .into())
             }
         }
     }
@@ -123,10 +128,11 @@ impl Value {
                 Ok(())
             }
             _ => {
-                Err(Error::InvalidOperation(format!(
+                Err(RuntimeError::InvalidOperation(format!(
                     "can't index {:?} with {:?}",
                     self, index
-                )))
+                ))
+                .into())
             }
         }
     }
@@ -136,8 +142,12 @@ impl Value {
         match (self, rhs) {
             (Int(left), Int(right)) => {
                 left.checked_add(*right).map_or(
-                    Err(Error::InvalidOperation("integer overflow".into())),
-                    |i| Ok(Int(i)),
+                    Err(RuntimeError::InvalidOperation(format!(
+                        "{} + {} overflows integer",
+                        left, right
+                    ))
+                    .into()),
+                    |result| Ok(Int(result)),
                 )
             }
             (Flt(left), Flt(right)) => Ok(Flt(left + right)),
@@ -145,11 +155,15 @@ impl Value {
             (Flt(left), Int(right)) => Ok(Flt(left + *right as f64)),
             (Str(left), Str(right)) => Ok(Str(left.clone() + right.as_ref())),
             (Array(left), Array(right)) => Ok(Value::Array(left.concat(right))),
+            (Object(left), right) if left.has_method(&"__add__".into()) => {
+                left.index_get(&"__add__".into()).call(vec![right.clone()])
+            }
             _ => {
-                Err(Error::InvalidOperation(format!(
+                Err(RuntimeError::InvalidOperation(format!(
                     "can't add {:?} to {:?}",
-                    self, rhs
-                )))
+                    rhs, self
+                ))
+                .into())
             }
         }
     }
@@ -159,18 +173,26 @@ impl Value {
         match (self, rhs) {
             (Int(left), Int(right)) => {
                 left.checked_sub(*right).map_or(
-                    Err(Error::InvalidOperation("integer underflow".into())),
-                    |i| Ok(Int(i)),
+                    Err(RuntimeError::InvalidOperation(format!(
+                        "{} - {} underflows integer",
+                        left, right
+                    ))
+                    .into()),
+                    |result| Ok(Int(result)),
                 )
             }
             (Flt(left), Flt(right)) => Ok(Flt(left - right)),
             (Int(left), Flt(right)) => Ok(Flt(*left as f64 - right)),
             (Flt(left), Int(right)) => Ok(Flt(left - *right as f64)),
+            (Object(left), right) if left.has_method(&"__sub__".into()) => {
+                left.index_get(&"__sub__".into()).call(vec![right.clone()])
+            }
             _ => {
-                Err(Error::InvalidOperation(format!(
+                Err(RuntimeError::InvalidOperation(format!(
                     "can't subtract {:?} from {:?}",
-                    self, rhs
-                )))
+                    rhs, self
+                ))
+                .into())
             }
         }
     }
@@ -180,18 +202,26 @@ impl Value {
         match (self, rhs) {
             (Int(left), Int(right)) => {
                 left.checked_mul(*right).map_or(
-                    Err(Error::InvalidOperation("integer overflow".into())),
-                    |i| Ok(Int(i)),
+                    Err(RuntimeError::InvalidOperation(format!(
+                        "{} * {} overflows integer",
+                        left, right
+                    ))
+                    .into()),
+                    |result| Ok(Int(result)),
                 )
             }
             (Flt(left), Flt(right)) => Ok(Flt(left * right)),
             (Int(left), Flt(right)) => Ok(Flt(*left as f64 * right)),
             (Flt(left), Int(right)) => Ok(Flt(left * *right as f64)),
+            (Object(left), right) if left.has_method(&"__mul__".into()) => {
+                left.index_get(&"__mul__".into()).call(vec![right.clone()])
+            }
             _ => {
-                Err(Error::InvalidOperation(format!(
+                Err(RuntimeError::InvalidOperation(format!(
                     "can't multiply {:?} by {:?}",
                     self, rhs
-                )))
+                ))
+                .into())
             }
         }
     }
@@ -201,20 +231,32 @@ impl Value {
         match (self, rhs) {
             (Int(left), Int(right)) => {
                 left.checked_div(*right).map_or(
-                    Err(Error::InvalidOperation(
-                        "invalid integer division".into(),
-                    )),
+                    Err(RuntimeError::InvalidOperation(
+                        if *right == 0 {
+                            format!("division by 0: {} / {}", left, right)
+                        } else {
+                            format!(
+                                "division results in integer overflow: {} / {}",
+                                left, right
+                            )
+                        },
+                    )
+                    .into()),
                     |i| Ok(Int(i)),
                 )
             }
             (Flt(left), Flt(right)) => Ok(Flt(left / right)),
             (Int(left), Flt(right)) => Ok(Flt(*left as f64 / right)),
             (Flt(left), Int(right)) => Ok(Flt(left / *right as f64)),
+            (Object(left), right) if left.has_method(&"__div__".into()) => {
+                left.index_get(&"__div__".into()).call(vec![right.clone()])
+            }
             _ => {
-                Err(Error::InvalidOperation(format!(
+                Err(RuntimeError::InvalidOperation(format!(
                     "can't divide {:?} by {:?}",
                     self, rhs
-                )))
+                ))
+                .into())
             }
         }
     }
@@ -226,23 +268,37 @@ impl Value {
             (Flt(left), Flt(right)) => Ok(Flt(left % right)),
             (Int(left), Flt(right)) => Ok(Flt(*left as f64 % right)),
             (Flt(left), Int(right)) => Ok(Flt(left % *right as f64)),
+            (Object(left), right) if left.has_method(&"__rem__".into()) => {
+                left.index_get(&"__rem__".into()).call(vec![right.clone()])
+            }
             _ => {
-                Err(Error::InvalidOperation(format!(
+                Err(RuntimeError::InvalidOperation(format!(
                     "can't divide {:?} by {:?} for a remainder",
                     self, rhs
-                )))
+                ))
+                .into())
             }
         }
     }
 
     pub fn op_eq(&self, rhs: &Value) -> Result<Value, Error> {
         use Value::*;
-        Ok(Bool(self == rhs))
+        match (self, rhs) {
+            (Object(left), right) if left.has_method(&"__eq__".into()) => {
+                left.index_get(&"__eq__".into()).call(vec![right.clone()])
+            }
+            _ => Ok(Bool(self == rhs)),
+        }
     }
 
     pub fn op_neq(&self, rhs: &Value) -> Result<Value, Error> {
         use Value::*;
-        Ok(Bool(self != rhs))
+        match (self, rhs) {
+            (Object(left), right) if left.has_method(&"__neq__".into()) => {
+                left.index_get(&"__neq__".into()).call(vec![right.clone()])
+            }
+            _ => Ok(Bool(self != rhs)),
+        }
     }
 
     pub fn op_gt(&self, rhs: &Value) -> Result<Value, Error> {
@@ -252,11 +308,15 @@ impl Value {
             (Flt(left), Flt(right)) => Ok(Bool(left > right)),
             (Int(left), Flt(right)) => Ok(Bool(*left as f64 > *right)),
             (Flt(left), Int(right)) => Ok(Bool(*left > *right as f64)),
+            (Object(left), right) if left.has_method(&"__gt__".into()) => {
+                left.index_get(&"__gt__".into()).call(vec![right.clone()])
+            }
             _ => {
-                Err(Error::InvalidOperation(format!(
+                Err(RuntimeError::InvalidOperation(format!(
                     "can't compare {:?} to {:?} (>)",
                     self, rhs,
-                )))
+                ))
+                .into())
             }
         }
     }
@@ -268,11 +328,15 @@ impl Value {
             (Flt(left), Flt(right)) => Ok(Bool(left < right)),
             (Int(left), Flt(right)) => Ok(Bool((*left as f64) < *right)),
             (Flt(left), Int(right)) => Ok(Bool(*left < *right as f64)),
+            (Object(left), right) if left.has_method(&"__lt__".into()) => {
+                left.index_get(&"__lt__".into()).call(vec![right.clone()])
+            }
             _ => {
-                Err(Error::InvalidOperation(format!(
+                Err(RuntimeError::InvalidOperation(format!(
                     "can't compare {:?} to {:?} (<)",
                     self, rhs,
-                )))
+                ))
+                .into())
             }
         }
     }
@@ -284,11 +348,15 @@ impl Value {
             (Flt(left), Flt(right)) => Ok(Bool(left >= right)),
             (Int(left), Flt(right)) => Ok(Bool(*left as f64 >= *right)),
             (Flt(left), Int(right)) => Ok(Bool(*left >= *right as f64)),
+            (Object(left), right) if left.has_method(&"__geq__".into()) => {
+                left.index_get(&"__geq__".into()).call(vec![right.clone()])
+            }
             _ => {
-                Err(Error::InvalidOperation(format!(
+                Err(RuntimeError::InvalidOperation(format!(
                     "can't compare {:?} to {:?} (>=)",
                     self, rhs,
-                )))
+                ))
+                .into())
             }
         }
     }
@@ -300,11 +368,15 @@ impl Value {
             (Flt(left), Flt(right)) => Ok(Bool(left <= right)),
             (Int(left), Flt(right)) => Ok(Bool((*left as f64) <= *right)),
             (Flt(left), Int(right)) => Ok(Bool(*left <= *right as f64)),
+            (Object(left), right) if left.has_method(&"__leq__".into()) => {
+                left.index_get(&"__leq__".into()).call(vec![right.clone()])
+            }
             _ => {
-                Err(Error::InvalidOperation(format!(
+                Err(RuntimeError::InvalidOperation(format!(
                     "can't compare {:?} to {:?} (<=)",
                     self, rhs,
-                )))
+                ))
+                .into())
             }
         }
     }
@@ -314,11 +386,15 @@ impl Value {
         match self {
             Int(v) => Ok(Int(-1 * v)),
             Flt(v) => Ok(Flt(-1.0 * v)),
+            Object(o) if o.has_method(&"__sub_unary__".into()) => {
+                o.index_get(&"__sub_unary__".into()).call(vec![])
+            }
             _ => {
-                Err(Error::InvalidOperation(format!(
+                Err(RuntimeError::InvalidOperation(format!(
                     "can't make {:?} negative",
                     self,
-                )))
+                ))
+                .into())
             }
         }
     }
@@ -347,11 +423,15 @@ impl Value {
         match self {
             Value::Func(f) => f.call(args),
             Value::NativeFunc(f) => f.call(args),
+            Value::Object(o) if o.has_method(&"__call__".into()) => {
+                o.index_get(&"__call__".into()).call(args)
+            }
             _ => {
-                return Err(Error::InvalidOperation(format!(
+                return Err(RuntimeError::InvalidOperation(format!(
                     "can't call {:?}",
                     self
-                )));
+                ))
+                .into());
             }
         }
     }

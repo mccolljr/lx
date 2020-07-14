@@ -13,3 +13,4 @@ name = "lx"
 path = "src/main.rs"
 
 [dependencies]
+quick-error = "1.2.3"
