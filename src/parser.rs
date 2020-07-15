@@ -171,6 +171,7 @@ impl Parser {
             TokenType::KwFn => self.parse_fndef_stmt(),
             TokenType::KwIf => self.parse_if_stmt(),
             TokenType::KwWhile => self.parse_while_stmt(),
+            TokenType::KwFor => self.parse_for_in_stmt(),
             TokenType::KwReturn => {
                 if self.func_depth > 0 {
                     self.parse_return_stmt()
@@ -421,6 +422,30 @@ impl Parser {
         Ok(Stmt::While {
             kwwhile,
             cond,
+            obrace,
+            body,
+            cbrace,
+        })
+    }
+
+    fn parse_for_in_stmt(&mut self) -> Result<Stmt, SyntaxError> {
+        let kwfor = self.expect(TokenType::KwFor)?.pos;
+        let ident = self.parse_ident()?;
+        let kwin = self.expect(TokenType::KwIn)?.pos;
+        let expr = Box::new(self.parse_expr(0)?);
+        let obrace = self.expect(TokenType::OBrace)?.pos;
+        self.open_scope();
+        self.scope_declare(ident.name.clone(), ident.pos)?;
+        self.loop_depth += 1;
+        let body = self.parse_stmt_list(&[TokenType::CBrace])?;
+        self.loop_depth -= 1;
+        self.close_scope();
+        let cbrace = self.expect(TokenType::CBrace)?.pos;
+        Ok(Stmt::ForIn {
+            kwfor,
+            ident,
+            kwin,
+            expr,
             obrace,
             body,
             cbrace,

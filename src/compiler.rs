@@ -81,16 +81,16 @@ fn compile_stmt(insts: &mut Vec<Inst>, stmt: Stmt) {
             for block in head {
                 compile_expr(insts, simplify_expr(*block.cond));
                 let branch_idx = insts.len();
-                insts.push(Inst::Noop);
+                insts.push(Inst::Illegal);
                 let start_idx = insts.len();
-                insts.push(compile_subframe(block.body, None));
+                insts.push(compile_subframe(block.body));
                 escape_indices.push(insts.len());
-                insts.push(Inst::Noop);
+                insts.push(Inst::Illegal);
                 let after_idx = insts.len();
                 insts[branch_idx] = Inst::Branch(start_idx, after_idx);
             }
             if let Some(else_block) = tail {
-                insts.push(compile_subframe(else_block.body, None));
+                insts.push(compile_subframe(else_block.body));
             }
             let end_idx = insts.len();
             for idx in escape_indices {
@@ -101,13 +101,22 @@ fn compile_stmt(insts: &mut Vec<Inst>, stmt: Stmt) {
             let cond_start_idx = insts.len();
             compile_expr(insts, simplify_expr(*cond));
             let cond_branch_idx = insts.len();
-            insts.push(Inst::Noop);
+            insts.push(Inst::Illegal);
             let body_frame_idx = insts.len();
-            insts.push(Inst::Noop);
+            insts.push(Inst::Illegal);
             insts.push(Inst::Goto(cond_start_idx));
             let end_idx = insts.len();
-            insts[body_frame_idx] = compile_subframe(body, Some(end_idx));
+            insts[body_frame_idx] = compile_while_loop(body, end_idx);
             insts[cond_branch_idx] = Inst::Branch(body_frame_idx, end_idx);
+        }
+        Stmt::ForIn {
+            ident, expr, body, ..
+        } => {
+            compile_expr(insts, simplify_expr(*expr));
+            let body_frame_idx = insts.len();
+            insts.push(Inst::Illegal);
+            let end_idx = insts.len();
+            insts[body_frame_idx] = compile_for_loop(ident.name, body, end_idx);
         }
         Stmt::Return { expr, .. } => {
             compile_expr(insts, simplify_expr(*expr));
@@ -144,7 +153,7 @@ fn compile_expr(insts: &mut Vec<Inst>, expr: Expr) {
         } => compile_func(insts, args, body, None, is_closure),
         Expr::LitArr { elements, .. } => {
             let elt_count = elements.len();
-            for e in elements {
+            for e in elements.into_iter().rev() {
                 compile_expr(insts, e);
             }
             insts.push(Inst::PushStack(Value::from(elt_count as i64)));
@@ -236,12 +245,35 @@ fn compile_func(
     });
 }
 
-fn compile_subframe(stmts: Vec<Stmt>, on_break: Option<usize>) -> Inst {
+fn compile_subframe(stmts: Vec<Stmt>) -> Inst {
     let mut sub_insts = Vec::<Inst>::with_capacity(stmts.len());
     for stmt in stmts {
         compile_stmt(&mut sub_insts, stmt);
     }
     return Inst::Subframe {
+        insts:    Rc::from(sub_insts),
+        on_break: None,
+    };
+}
+
+fn compile_while_loop(stmts: Vec<Stmt>, on_break: usize) -> Inst {
+    let mut sub_insts = Vec::<Inst>::with_capacity(stmts.len());
+    for stmt in stmts {
+        compile_stmt(&mut sub_insts, stmt);
+    }
+    return Inst::Subframe {
+        insts:    Rc::from(sub_insts),
+        on_break: Some(on_break),
+    };
+}
+
+fn compile_for_loop(var: String, stmts: Vec<Stmt>, on_break: usize) -> Inst {
+    let mut sub_insts = Vec::<Inst>::with_capacity(stmts.len());
+    for stmt in stmts {
+        compile_stmt(&mut sub_insts, stmt);
+    }
+    return Inst::Iterate {
+        var,
         insts: Rc::from(sub_insts),
         on_break,
     };

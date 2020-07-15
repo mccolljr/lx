@@ -24,6 +24,14 @@ impl From<VecDeque<Value>> for Array {
     fn from(src: VecDeque<Value>) -> Self { Self(Rc::new(RefCell::new(src))) }
 }
 
+impl From<&[Value]> for Array {
+    fn from(src: &[Value]) -> Self {
+        Self(Rc::new(RefCell::new(VecDeque::from_iter(
+            src.iter().map(|v| v.clone()),
+        ))))
+    }
+}
+
 impl Array {
     pub fn new() -> Self { Array(Rc::new(RefCell::new(VecDeque::new()))) }
 
@@ -57,13 +65,31 @@ impl Array {
                 .map(|v| v.clone()),
         ))));
     }
+
+    pub fn value_iter(&self) -> impl Iterator<Item = Value> {
+        ArrayIter {
+            src:  self.clone(),
+            size: self.len(),
+            i:    0,
+        }
+    }
 }
 
-impl IntoIterator for Array {
-    type IntoIter = std::collections::vec_deque::IntoIter<Value>;
+struct ArrayIter {
+    src:  Array,
+    size: usize,
+    i:    usize,
+}
+
+impl Iterator for ArrayIter {
     type Item = Value;
 
-    fn into_iter(self) -> Self::IntoIter {
-        (*self.0).clone().into_inner().into_iter()
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.i >= self.size {
+            return None;
+        }
+        let next_val = self.src.index_get(self.i);
+        self.i += 1;
+        Some(next_val)
     }
 }

@@ -77,6 +77,10 @@ impl From<Array> for Value {
     fn from(src: Array) -> Self { Value::Array(src) }
 }
 
+impl From<&[Value]> for Value {
+    fn from(src: &[Value]) -> Self { Value::Array(Array::from(src)) }
+}
+
 impl From<Object> for Value {
     fn from(src: Object) -> Self { Value::Object(src) }
 }
@@ -404,6 +408,21 @@ impl Value {
         Ok(Bool(!self.truthy()))
     }
 
+    pub fn iter(&self) -> Result<impl Iterator<Item = Value>, Error> {
+        use Value::*;
+        match self {
+            Object(v) => Ok(ValueIter(Box::new(v.value_iter()))),
+            Array(v) => Ok(ValueIter(Box::new(v.value_iter()))),
+            _ => {
+                Err(RuntimeError::InvalidOperation(format!(
+                    "can't iterate over {:?}",
+                    self,
+                ))
+                .into())
+            }
+        }
+    }
+
     pub fn truthy(&self) -> bool {
         use Value::*;
         match self {
@@ -482,4 +501,12 @@ impl Value {
             _ => unreachable!(),
         }
     }
+}
+
+struct ValueIter(Box<dyn Iterator<Item = Value>>);
+
+impl Iterator for ValueIter {
+    type Item = Value;
+
+    fn next(&mut self) -> Option<Self::Item> { self.0.next() }
 }

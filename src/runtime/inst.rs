@@ -9,6 +9,7 @@ use std::rc::Rc;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Inst {
+    Illegal,
     Noop,
     PushStack(Value),
     PopStack(),
@@ -30,6 +31,11 @@ pub enum Inst {
     Subframe {
         insts:    Rc<[Inst]>,
         on_break: Option<usize>,
+    },
+    Iterate {
+        var:      String,
+        insts:    Rc<[Inst]>,
+        on_break: usize,
     },
     InitCall,
     AddCallArg,

@@ -24,6 +24,11 @@ fn main() {
     let vm = VM::new(
         compile(
             "
+            let x = {a: 1, b: 3, (1+1): 'q'};
+            for pair in x {
+                let [k, v] = pair;
+                print(k,v);
+            }
             ",
         )
         .expect("compilation error"),

@@ -274,7 +274,7 @@ fn value_to_expr(v: Value, pos: Pos) -> Option<Expr> {
         Value::Bool(v) => Some(Expr::LitBool { val: v, pos }),
         Value::Array(v) => {
             let mut elements = Vec::<Expr>::with_capacity(v.len());
-            for ev in v {
+            for ev in v.value_iter() {
                 elements.push(value_to_expr(ev, pos)?);
             }
             Some(Expr::LitArr {
@@ -285,7 +285,7 @@ fn value_to_expr(v: Value, pos: Pos) -> Option<Expr> {
         }
         Value::Object(v) => {
             let mut fields = Vec::<ObjField>::with_capacity(v.len());
-            for (fk, fv) in v {
+            for (fk, fv) in v.rust_iter() {
                 fields.push(ObjField {
                     key:   ObjKey::Static(fk, pos),
                     colon: pos,

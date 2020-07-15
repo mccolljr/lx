@@ -98,11 +98,12 @@ impl VMState {
         let mut ret_val = Value::Null;
         let mut exit_status = FrameStatus::Ended;
         let ret_sp = self.stack.borrow().len();
-        loop {
+        'frame: loop {
             if ip >= insts.len() {
                 break;
             }
             match insts[ip].clone() {
+                Inst::Illegal => return Err(Panic::IllegalInstruction.into()),
                 Inst::Noop => {}
                 Inst::PopStack() => {
                     self.pop_stack()?;
@@ -176,12 +177,12 @@ impl VMState {
                     } else {
                         ip = fail_ip;
                     }
-                    continue;
+                    continue 'frame;
                 }
                 Inst::Goto(new_ip) => {
                     // TODO: protect against invalid or dangerous jumps
                     ip = new_ip;
-                    continue;
+                    continue 'frame;
                 }
                 Inst::MakeFunc {
                     args: fn_args,
@@ -244,7 +245,7 @@ impl VMState {
                 Inst::Return => {
                     ret_val = self.pop_stack()?;
                     exit_status = FrameStatus::Returned;
-                    break;
+                    break 'frame;
                 }
                 Inst::BuildObject => {
                     match self.pop_stack()? {
@@ -301,7 +302,7 @@ impl VMState {
                 }
                 Inst::Break => {
                     exit_status = FrameStatus::Broke;
-                    break;
+                    break 'frame;
                 }
                 Inst::Subframe { insts, on_break } => {
                     match self.run_frame(
@@ -311,20 +312,46 @@ impl VMState {
                         FrameStatus::Returned => {
                             ret_val = self.pop_stack()?;
                             exit_status = FrameStatus::Returned;
-                            break;
+                            break 'frame;
                         }
                         FrameStatus::Broke => {
                             self.pop_stack()?;
                             if on_break.is_some() {
                                 ip = on_break.unwrap();
-                                continue;
+                                continue 'frame;
                             } else {
                                 exit_status = FrameStatus::Broke;
-                                break;
+                                break 'frame;
                             }
                         }
                         FrameStatus::Ended => {
                             self.pop_stack()?;
+                        }
+                    }
+                }
+                Inst::Iterate {
+                    var,
+                    insts,
+                    on_break,
+                } => {
+                    let iterator = self.pop_stack()?.iter()?;
+                    let scope = &Rc::new(Scope::extend(Rc::clone(&scope)));
+                    for v in iterator {
+                        scope.declare(var.clone(), v);
+                        match self.run_frame(insts.clone(), Rc::clone(scope))? {
+                            FrameStatus::Returned => {
+                                ret_val = self.pop_stack()?;
+                                exit_status = FrameStatus::Returned;
+                                break 'frame;
+                            }
+                            FrameStatus::Broke => {
+                                self.pop_stack()?;
+                                ip = on_break;
+                                continue 'frame;
+                            }
+                            FrameStatus::Ended => {
+                                self.pop_stack()?;
+                            }
                         }
                     }
                 }

@@ -203,6 +203,8 @@ impl Lexer {
                 "throw" => KwThrow,
                 "while" => KwWhile,
                 "break" => KwBreak,
+                "for" => KwFor,
+                "in" => KwIn,
                 _ => Ident,
             },
             lit,

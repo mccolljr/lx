@@ -60,6 +60,9 @@ quick_error! {
         MalformedStack(context: &'static str) {
             display("PANIC: MALFORMED STACK: {}", context)
         }
+        IllegalInstruction {
+            display("PANIC: ILLEGAL INSTRUCTION")
+        }
     }
 }
 

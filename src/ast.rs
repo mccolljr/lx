@@ -18,6 +18,10 @@ pub struct Ident {
     pub name: String,
 }
 
+impl Display for Ident {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult { write!(f, "{}", self.name) }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct IfBlock {
     pub kw_typ: TokenType,
@@ -42,6 +46,10 @@ pub struct FnArg {
     pub name: String,
 }
 
+impl Display for FnArg {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult { write!(f, "{}", self.name) }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ObjField {
     pub key:   ObjKey,
@@ -49,10 +57,25 @@ pub struct ObjField {
     pub val:   Box<Expr>,
 }
 
+impl Display for ObjField {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+        write!(f, "{}: {}", self.key, self.val)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum ObjKey {
     Static(String, Pos),
     Dynamic(Box<Expr>),
+}
+
+impl Display for ObjKey {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+        match self {
+            ObjKey::Static(name, _) => write!(f, "{:?}", name),
+            ObjKey::Dynamic(expr) => write!(f, "({})", expr),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -62,6 +85,20 @@ pub enum AssignTarget {
     Select(Box<Expr>, Ident),
 }
 
+impl Display for AssignTarget {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+        match self {
+            AssignTarget::Ident(ident) => write!(f, "{}", ident),
+            AssignTarget::Index(target, elt) => {
+                write!(f, "{}[{}]", target, elt)
+            }
+            AssignTarget::Select(target, elt) => {
+                write!(f, "{}.{}", target, elt)
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum LetTarget {
     Ident(Ident),
@@ -69,10 +106,49 @@ pub enum LetTarget {
     ObjDestruct(Vec<ObjDestructItem>),
 }
 
+impl Display for LetTarget {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+        match self {
+            LetTarget::Ident(ident) => write!(f, "{}", ident),
+            LetTarget::ArrDestruct(items) => {
+                write!(f, "[")?;
+                for (i, item) in items.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", item)?;
+                }
+                write!(f, "]")
+            }
+            LetTarget::ObjDestruct(items) => {
+                write!(f, "{{")?;
+                for (i, item) in items.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", item)?;
+                }
+                write!(f, "}}")
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum ObjDestructItem {
     Name(Ident),
     NameMap(String, Ident),
+}
+
+impl Display for ObjDestructItem {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+        match self {
+            ObjDestructItem::Name(ident) => write!(f, "{}", ident.name),
+            ObjDestructItem::NameMap(key, ident) => {
+                write!(f, "{:?}: {}", key, ident.name)
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -114,6 +190,15 @@ pub enum Stmt {
         body:    Vec<Stmt>,
         cbrace:  Pos,
     },
+    ForIn {
+        kwfor:  Pos,
+        ident:  Ident,
+        kwin:   Pos,
+        expr:   Box<Expr>,
+        obrace: Pos,
+        body:   Vec<Stmt>,
+        cbrace: Pos,
+    },
     Expr {
         expr: Box<Expr>,
         semi: Pos,
@@ -138,51 +223,10 @@ impl Display for Stmt {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         match self {
             Stmt::Let { target, expr, .. } => {
-                match target {
-                    LetTarget::Ident(name) => {
-                        write!(f, "let {} = {};", name.name, expr)
-                    }
-                    LetTarget::ArrDestruct(names) => {
-                        write!(f, "let [")?;
-                        for (i, name) in names.iter().enumerate() {
-                            if i > 0 {
-                                write!(f, ", ")?;
-                            }
-                            write!(f, "{}", name)?;
-                        }
-                        write!(f, "] = {};", expr)
-                    }
-                    LetTarget::ObjDestruct(items) => {
-                        write!(f, "let {{")?;
-                        for (i, item) in items.iter().enumerate() {
-                            if i > 0 {
-                                write!(f, ", ")?;
-                            }
-                            match item {
-                                ObjDestructItem::Name(ident) => {
-                                    write!(f, "{}", ident.name)?
-                                }
-                                ObjDestructItem::NameMap(key, ident) => {
-                                    write!(f, "{:?}: {}", key, ident.name)?
-                                }
-                            }
-                        }
-                        write!(f, "}} = {};", expr)
-                    }
-                }
+                write!(f, "let {} = {};", target, expr)
             }
             Stmt::Assignment { target, rhs, .. } => {
-                match target {
-                    AssignTarget::Ident(ident) => {
-                        write!(f, "{} = {};", ident.name, rhs)
-                    }
-                    AssignTarget::Index(item, index) => {
-                        write!(f, "{}[{}] = {};", item, index, rhs)
-                    }
-                    AssignTarget::Select(item, ident) => {
-                        write!(f, "{}.{} = {};", item, ident.name, rhs)
-                    }
-                }
+                write!(f, "{} = {};", target, rhs)
             }
             Stmt::FnDef {
                 name, args, body, ..
@@ -226,6 +270,15 @@ impl Display for Stmt {
             }
             Stmt::While { cond, body, .. } => {
                 write!(f, "while {} {{", cond)?;
+                for stmt in body.iter() {
+                    write!(f, "\n\t{}", stmt)?;
+                }
+                write!(f, "\n}}")
+            }
+            Stmt::ForIn {
+                ident, expr, body, ..
+            } => {
+                write!(f, "for {} in {} {{", ident, expr)?;
                 for stmt in body.iter() {
                     write!(f, "\n\t{}", stmt)?;
                 }
@@ -276,6 +329,11 @@ impl Node for Stmt {
                 kwwhile, cbrace, ..
             } => {
                 let start = kwwhile.offset;
+                let end = cbrace.offset + cbrace.length;
+                Pos::span(start, end - start)
+            }
+            Stmt::ForIn { kwfor, cbrace, .. } => {
+                let start = kwfor.offset;
                 let end = cbrace.offset + cbrace.length;
                 Pos::span(start, end - start)
             }
@@ -421,19 +479,7 @@ impl Display for Expr {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
-                    match &field.key {
-                        ObjKey::Static(name, ..) => {
-                            write!(f, "{:?}: {}", name, field.val)?;
-                        }
-                        ObjKey::Dynamic(expr) => {
-                            match expr.as_ref() {
-                                Expr::Paren { .. } => {
-                                    write!(f, "{}: {}", expr, field.val)?
-                                }
-                                _ => write!(f, "({}): {}", expr, field.val)?,
-                            }
-                        }
-                    }
+                    write!(f, "{}", field)?;
                 }
                 write!(f, "}}")?;
             }

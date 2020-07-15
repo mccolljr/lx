@@ -73,6 +73,8 @@ pub enum TokenType {
     KwThrow,
     KwWhile,
     KwBreak,
+    KwFor,
+    KwIn,
 }
 
 impl Display for TokenType {
@@ -120,6 +122,8 @@ impl Display for TokenType {
             KwThrow => write!(f, "throw"),
             KwWhile => write!(f, "while"),
             KwBreak => write!(f, "break"),
+            KwFor => write!(f, "for"),
+            KwIn => write!(f, "in"),
         }
     }
 }
