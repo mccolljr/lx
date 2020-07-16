@@ -1,15 +1,14 @@
-use crate::{
-    error::SyntaxError,
-    source::{
-        Code,
-        Pos,
-    },
-    token::{
-        Token,
-        TokenType,
-        TokenType::*,
-    },
+use crate::error::SyntaxError;
+use crate::source::{
+    Code,
+    Pos,
 };
+use crate::token::{
+    Token,
+    TokenType,
+    TokenType::*,
+};
+
 use std::iter::FromIterator;
 
 pub struct Lexer {

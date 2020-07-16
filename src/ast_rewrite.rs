@@ -1,17 +1,15 @@
-use crate::{
-    ast::{
-        Expr,
-        Node,
-        ObjField,
-        ObjKey,
-    },
-    runtime::value::{
-        Array,
-        Object,
-        Value,
-    },
-    source::Pos,
+use crate::ast::{
+    Expr,
+    Node,
+    ObjField,
+    ObjKey,
 };
+use crate::runtime::value::{
+    Array,
+    Object,
+    Value,
+};
+use crate::source::Pos;
 
 fn const_val(x: &Expr) -> Option<Value> {
     match x {

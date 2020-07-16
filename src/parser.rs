@@ -1,33 +1,30 @@
-use crate::{
-    ast::{
-        ElseBlock,
-        Expr,
-        FnArg,
-        Ident,
-        IfBlock,
-        LetTarget,
-        Node,
-        ObjDestructItem,
-        ObjField,
-        ObjKey,
-        Stmt,
-    },
-    error::SyntaxError,
-    lexer::Lexer,
-    source::{
-        Code,
-        Pos,
-    },
-    token::{
-        Token,
-        TokenType,
-    },
+use crate::ast::{
+    ElseBlock,
+    Expr,
+    FnArg,
+    Ident,
+    IfBlock,
+    LetTarget,
+    Node,
+    ObjDestructItem,
+    ObjField,
+    ObjKey,
+    Stmt,
 };
-use std::{
-    cell::RefCell,
-    collections::HashMap,
-    rc::Rc,
+use crate::error::SyntaxError;
+use crate::lexer::Lexer;
+use crate::source::{
+    Code,
+    Pos,
 };
+use crate::token::{
+    Token,
+    TokenType,
+};
+
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
 
 struct ParseScope {
     parent:   Option<Rc<ParseScope>>,

@@ -1,14 +1,13 @@
 use super::value::Value;
-use std::{
-    cell::RefCell,
-    collections::HashMap,
-    fmt::{
-        Debug,
-        Formatter,
-        Result as FmtResult,
-    },
-    rc::Rc,
+
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::fmt::{
+    Debug,
+    Formatter,
+    Result as FmtResult,
 };
+use std::rc::Rc;
 
 #[derive(Clone, PartialEq)]
 pub struct Object(Rc<RefCell<HashMap<String, Value>>>);

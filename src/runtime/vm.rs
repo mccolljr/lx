@@ -1,23 +1,20 @@
-use super::{
-    super::ast::ObjDestructItem,
-    inst::Inst,
-    scope::Scope,
-    value::{
-        Array,
-        Func,
-        Object,
-        Value,
-    },
-};
+use crate::ast::ObjDestructItem;
 use crate::error::{
     Error,
     Panic,
     RuntimeError,
 };
-use std::{
-    cell::RefCell,
-    rc::Rc,
+use crate::runtime::inst::Inst;
+use crate::runtime::scope::Scope;
+use crate::runtime::value::{
+    Array,
+    Func,
+    Object,
+    Value,
 };
+
+use std::cell::RefCell;
+use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct VM {
@@ -104,23 +101,22 @@ impl VMState {
             }
             match insts[ip].clone() {
                 Inst::Illegal => return Err(Panic::IllegalInstruction.into()),
-                Inst::Noop => {}
-                Inst::PopStack() => {
+                Inst::StackPop() => {
                     self.pop_stack()?;
                 }
-                Inst::PushStack(v) => {
+                Inst::StackPush(v) => {
                     self.push_stack(v)?;
                 }
-                Inst::LoadNamed(name) => {
+                Inst::ScopeLoad(name) => {
                     self.push_stack(scope.get(&name))?;
                 }
-                Inst::StoreNamed(name) => {
+                Inst::ScopeStore(name) => {
                     scope.set(name, self.pop_stack()?);
                 }
-                Inst::DeclareNamed(name) => {
+                Inst::ScopeDefine(name) => {
                     scope.declare(name, self.pop_stack()?);
                 }
-                Inst::ArrDestruct(names) => {
+                Inst::DestructureArray(names) => {
                     let source = self.pop_stack()?;
                     if let Value::Array(arr) = source {
                         for (i, name) in names.iter().enumerate() {
@@ -134,7 +130,7 @@ impl VMState {
                         .into());
                     }
                 }
-                Inst::ObjDestruct(items) => {
+                Inst::DestructureObject(items) => {
                     let source = self.pop_stack()?;
                     if let Value::Object(obj) = source {
                         for item in items.iter() {
@@ -161,16 +157,16 @@ impl VMState {
                         .into());
                     }
                 }
-                Inst::BinaryOp(typ) => {
+                Inst::OperationBinary(typ) => {
                     let rhs = self.pop_stack()?;
                     let lhs = self.pop_stack()?;
                     self.push_stack(Value::op_binary(&lhs, &rhs, typ)?)?;
                 }
-                Inst::UnaryOp(typ) => {
+                Inst::OperationUnary(typ) => {
                     let target = self.pop_stack()?;
                     self.push_stack(Value::op_unary(&target, typ)?)?;
                 }
-                Inst::Branch(pass_ip, fail_ip) => {
+                Inst::BranchConditional(pass_ip, fail_ip) => {
                     // TODO: protect against invalid or dangerous jumps
                     if self.pop_stack()?.truthy() {
                         ip = pass_ip;
@@ -179,12 +175,12 @@ impl VMState {
                     }
                     continue 'frame;
                 }
-                Inst::Goto(new_ip) => {
+                Inst::BranchGoto(new_ip) => {
                     // TODO: protect against invalid or dangerous jumps
                     ip = new_ip;
                     continue 'frame;
                 }
-                Inst::MakeFunc {
+                Inst::BuildFunc {
                     args: fn_args,
                     insts: fn_insts,
                     name: maybe_name,
@@ -204,10 +200,10 @@ impl VMState {
                         },
                     )))?;
                 }
-                Inst::InitCall => {
+                Inst::CallBegin => {
                     self.push_stack(Value::Int(0))?;
                 }
-                Inst::AddCallArg => {
+                Inst::CallAppend => {
                     let arg = self.pop_stack()?;
                     if let Value::Int(argct) = self.pop_stack()? {
                         self.push_stack(arg)?;
@@ -219,7 +215,7 @@ impl VMState {
                         .into());
                     };
                 }
-                Inst::FinishCall => {
+                Inst::CallEnd => {
                     let target = self.pop_stack()?;
                     if let Value::Int(argct) = self.pop_stack()? {
                         if argct < 0 {
@@ -242,7 +238,7 @@ impl VMState {
                         .into());
                     }
                 }
-                Inst::Return => {
+                Inst::ControlReturn => {
                     ret_val = self.pop_stack()?;
                     exit_status = FrameStatus::Returned;
                     break 'frame;
@@ -283,28 +279,28 @@ impl VMState {
                         }
                     }
                 }
-                Inst::Index => {
+                Inst::OperationIndexGet => {
                     let index = self.pop_stack()?;
                     let target = self.pop_stack()?;
                     self.push_stack(target.op_index(&index)?)?;
                 }
-                Inst::IndexSet => {
+                Inst::OperationIndexSet => {
                     let value = self.pop_stack()?;
                     let index = self.pop_stack()?;
                     let target = self.pop_stack()?;
                     target.op_index_set(&index, &value)?;
                 }
-                Inst::Throw => {
+                Inst::ControlThrow => {
                     return Err(RuntimeError::Generic(
                         self.pop_stack()?.to_string(),
                     )
                     .into());
                 }
-                Inst::Break => {
+                Inst::ControlBreak => {
                     exit_status = FrameStatus::Broke;
                     break 'frame;
                 }
-                Inst::Subframe { insts, on_break } => {
+                Inst::RunFrame { insts } => {
                     match self.run_frame(
                         insts,
                         Rc::new(Scope::extend(Rc::clone(&scope))),
@@ -316,20 +312,35 @@ impl VMState {
                         }
                         FrameStatus::Broke => {
                             self.pop_stack()?;
-                            if on_break.is_some() {
-                                ip = on_break.unwrap();
-                                continue 'frame;
-                            } else {
-                                exit_status = FrameStatus::Broke;
-                                break 'frame;
-                            }
+                            exit_status = FrameStatus::Broke;
+                            break 'frame;
                         }
                         FrameStatus::Ended => {
                             self.pop_stack()?;
                         }
                     }
                 }
-                Inst::Iterate {
+                Inst::RunLoopFrame { insts, on_break } => {
+                    match self.run_frame(
+                        insts,
+                        Rc::new(Scope::extend(Rc::clone(&scope))),
+                    )? {
+                        FrameStatus::Returned => {
+                            ret_val = self.pop_stack()?;
+                            exit_status = FrameStatus::Returned;
+                            break 'frame;
+                        }
+                        FrameStatus::Broke => {
+                            self.pop_stack()?;
+                            ip = on_break;
+                            continue 'frame;
+                        }
+                        FrameStatus::Ended => {
+                            self.pop_stack()?;
+                        }
+                    }
+                }
+                Inst::RunIterFrame {
                     var,
                     insts,
                     on_break,

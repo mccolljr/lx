@@ -1,16 +1,14 @@
-use std::{
-    fmt::{
-        Debug,
-        Display,
-        Formatter,
-        Result as FmtResult,
-    },
-    ops::{
-        Deref,
-        Index,
-    },
-    rc::Rc,
+use std::fmt::{
+    Debug,
+    Display,
+    Formatter,
+    Result as FmtResult,
 };
+use std::ops::{
+    Deref,
+    Index,
+};
+use std::rc::Rc;
 
 #[derive(Clone)]
 pub struct Code(Rc<[char]>);

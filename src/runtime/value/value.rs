@@ -1,19 +1,15 @@
-use super::{
-    array::Array,
-    funcs::{
-        Func,
-        NativeFunc,
-    },
-    object::Object,
+use super::array::Array;
+use super::funcs::{
+    Func,
+    NativeFunc,
 };
+use super::object::Object;
 
-use crate::{
-    error::{
-        Error,
-        RuntimeError,
-    },
-    token::TokenType,
+use crate::error::{
+    Error,
+    RuntimeError,
 };
+use crate::token::TokenType;
 
 #[derive(Clone, Debug)]
 pub enum Value {

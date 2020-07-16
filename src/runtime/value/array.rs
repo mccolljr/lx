@@ -1,15 +1,14 @@
 use super::value::Value;
-use std::{
-    cell::RefCell,
-    collections::VecDeque,
-    fmt::{
-        Debug,
-        Formatter,
-        Result as FmtResult,
-    },
-    iter::FromIterator,
-    rc::Rc,
+
+use std::cell::RefCell;
+use std::collections::VecDeque;
+use std::fmt::{
+    Debug,
+    Formatter,
+    Result as FmtResult,
 };
+use std::iter::FromIterator;
+use std::rc::Rc;
 
 #[derive(Clone, PartialEq)]
 pub struct Array(Rc<RefCell<VecDeque<Value>>>);

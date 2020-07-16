@@ -1,50 +1,49 @@
-use super::{
-    super::{
-        ast::ObjDestructItem,
-        token::TokenType,
-    },
-    value::Value,
-};
+use crate::ast::ObjDestructItem;
+use crate::runtime::value::Value;
+use crate::token::TokenType;
+
 use std::rc::Rc;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Inst {
     Illegal,
-    Noop,
-    PushStack(Value),
-    PopStack(),
-    LoadNamed(String),
-    StoreNamed(String),
-    DeclareNamed(String),
-    ArrDestruct(Rc<[String]>),
-    ObjDestruct(Rc<[ObjDestructItem]>),
-    BinaryOp(TokenType),
-    UnaryOp(TokenType),
-    Branch(usize, usize),
-    Goto(usize),
-    MakeFunc {
+    StackPush(Value),
+    StackPop(),
+    ScopeLoad(String),
+    ScopeStore(String),
+    ScopeDefine(String),
+    DestructureArray(Rc<[String]>),
+    DestructureObject(Rc<[ObjDestructItem]>),
+    OperationBinary(TokenType),
+    OperationUnary(TokenType),
+    OperationIndexGet,
+    OperationIndexSet,
+    BranchConditional(usize, usize),
+    BranchGoto(usize),
+    BuildFunc {
         args:       Vec<String>,
         insts:      Rc<[Inst]>,
         name:       Option<Rc<str>>,
         is_closure: bool,
     },
-    Subframe {
-        insts:    Rc<[Inst]>,
-        on_break: Option<usize>,
+    BuildObject,
+    BuildArray,
+    RunFrame {
+        insts: Rc<[Inst]>,
     },
-    Iterate {
+    RunLoopFrame {
+        insts:    Rc<[Inst]>,
+        on_break: usize,
+    },
+    RunIterFrame {
         var:      String,
         insts:    Rc<[Inst]>,
         on_break: usize,
     },
-    InitCall,
-    AddCallArg,
-    FinishCall,
-    Return,
-    BuildObject,
-    BuildArray,
-    Index,
-    IndexSet,
-    Throw,
-    Break,
+    CallBegin,
+    CallAppend,
+    CallEnd,
+    ControlReturn,
+    ControlThrow,
+    ControlBreak,
 }

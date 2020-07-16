@@ -1,23 +1,19 @@
-use super::{
-    super::{
-        inst::Inst,
-        scope::Scope,
-        vm::VMState,
-    },
-    value::Value,
-};
+use super::value::Value;
+
 use crate::error::{
     Error,
     RuntimeError,
 };
-use std::{
-    fmt::{
-        Debug,
-        Formatter,
-        Result as FmtResult,
-    },
-    rc::Rc,
+use crate::runtime::inst::Inst;
+use crate::runtime::scope::Scope;
+use crate::runtime::vm::VMState;
+
+use std::fmt::{
+    Debug,
+    Formatter,
+    Result as FmtResult,
 };
+use std::rc::Rc;
 
 #[derive(Clone)]
 pub struct Func {

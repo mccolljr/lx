@@ -1,41 +1,38 @@
-use super::{
-    ast::{
-        AssignTarget,
-        Expr,
-        FnArg,
-        LetTarget,
-        ObjKey,
-        Stmt,
-    },
-    ast_rewrite::simplify_expr,
-    error::Error,
-    parser::Parser,
-    runtime::{
-        inst::Inst,
-        value::Value,
-    },
-    source::Code,
-    token::TokenType,
+use crate::ast::{
+    AssignTarget,
+    Expr,
+    FnArg,
+    LetTarget,
+    ObjKey,
+    Stmt,
 };
+use crate::ast_rewrite::simplify_expr;
+use crate::error::Error;
+use crate::parser::Parser;
+use crate::runtime::inst::Inst;
+use crate::runtime::value::Value;
+use crate::source::Code;
+use crate::token::TokenType;
+
 use std::rc::Rc;
 
 fn compile_stmt(insts: &mut Vec<Inst>, stmt: Stmt) {
     match stmt {
         Stmt::Expr { expr, .. } => {
             compile_expr(insts, simplify_expr(*expr));
-            insts.push(Inst::PopStack());
+            insts.push(Inst::StackPop());
         }
         Stmt::Let { target, expr, .. } => {
             compile_expr(insts, simplify_expr(*expr));
             match target {
                 LetTarget::Ident(ident) => {
-                    insts.push(Inst::DeclareNamed(ident.name));
+                    insts.push(Inst::ScopeDefine(ident.name));
                 }
                 LetTarget::ArrDestruct(names) => {
-                    insts.push(Inst::ArrDestruct(Rc::from(names)));
+                    insts.push(Inst::DestructureArray(Rc::from(names)));
                 }
                 LetTarget::ObjDestruct(items) => {
-                    insts.push(Inst::ObjDestruct(Rc::from(items)));
+                    insts.push(Inst::DestructureObject(Rc::from(items)));
                 }
             }
         }
@@ -53,25 +50,25 @@ fn compile_stmt(insts: &mut Vec<Inst>, stmt: Stmt) {
                 Some(name.name.clone()),
                 is_closure,
             );
-            insts.push(Inst::DeclareNamed(name.name));
+            insts.push(Inst::ScopeDefine(name.name));
         }
         Stmt::Assignment { target, rhs, .. } => {
             match target {
                 AssignTarget::Ident(ident) => {
                     compile_expr(insts, simplify_expr(*rhs));
-                    insts.push(Inst::StoreNamed(ident.name));
+                    insts.push(Inst::ScopeStore(ident.name));
                 }
                 AssignTarget::Index(expr, index) => {
                     compile_expr(insts, simplify_expr(*expr));
                     compile_expr(insts, simplify_expr(*index));
                     compile_expr(insts, simplify_expr(*rhs));
-                    insts.push(Inst::IndexSet);
+                    insts.push(Inst::OperationIndexSet);
                 }
                 AssignTarget::Select(expr, selector) => {
                     compile_expr(insts, simplify_expr(*expr));
-                    insts.push(Inst::PushStack(Value::from(selector.name)));
+                    insts.push(Inst::StackPush(Value::from(selector.name)));
                     compile_expr(insts, simplify_expr(*rhs));
-                    insts.push(Inst::IndexSet);
+                    insts.push(Inst::OperationIndexSet);
                 }
             };
         }
@@ -87,14 +84,15 @@ fn compile_stmt(insts: &mut Vec<Inst>, stmt: Stmt) {
                 escape_indices.push(insts.len());
                 insts.push(Inst::Illegal);
                 let after_idx = insts.len();
-                insts[branch_idx] = Inst::Branch(start_idx, after_idx);
+                insts[branch_idx] =
+                    Inst::BranchConditional(start_idx, after_idx);
             }
             if let Some(else_block) = tail {
                 insts.push(compile_subframe(else_block.body));
             }
             let end_idx = insts.len();
             for idx in escape_indices {
-                insts[idx] = Inst::Goto(end_idx);
+                insts[idx] = Inst::BranchGoto(end_idx);
             }
         }
         Stmt::While { cond, body, .. } => {
@@ -104,10 +102,11 @@ fn compile_stmt(insts: &mut Vec<Inst>, stmt: Stmt) {
             insts.push(Inst::Illegal);
             let body_frame_idx = insts.len();
             insts.push(Inst::Illegal);
-            insts.push(Inst::Goto(cond_start_idx));
+            insts.push(Inst::BranchGoto(cond_start_idx));
             let end_idx = insts.len();
             insts[body_frame_idx] = compile_while_loop(body, end_idx);
-            insts[cond_branch_idx] = Inst::Branch(body_frame_idx, end_idx);
+            insts[cond_branch_idx] =
+                Inst::BranchConditional(body_frame_idx, end_idx);
         }
         Stmt::ForIn {
             ident, expr, body, ..
@@ -120,30 +119,30 @@ fn compile_stmt(insts: &mut Vec<Inst>, stmt: Stmt) {
         }
         Stmt::Return { expr, .. } => {
             compile_expr(insts, simplify_expr(*expr));
-            insts.push(Inst::Return);
+            insts.push(Inst::ControlReturn);
         }
         Stmt::Throw { error, .. } => {
             compile_expr(insts, simplify_expr(*error));
-            insts.push(Inst::Throw);
+            insts.push(Inst::ControlThrow);
         }
-        Stmt::Break { .. } => insts.push(Inst::Break),
+        Stmt::Break { .. } => insts.push(Inst::ControlBreak),
     }
 }
 
 fn compile_expr(insts: &mut Vec<Inst>, expr: Expr) {
     match expr {
-        Expr::LitNull { .. } => insts.push(Inst::PushStack(Value::Null)),
+        Expr::LitNull { .. } => insts.push(Inst::StackPush(Value::Null)),
         Expr::LitInt { val, .. } => {
-            insts.push(Inst::PushStack(Value::Int(val)))
+            insts.push(Inst::StackPush(Value::Int(val)))
         }
         Expr::LitFlt { val, .. } => {
-            insts.push(Inst::PushStack(Value::Flt(val)))
+            insts.push(Inst::StackPush(Value::Flt(val)))
         }
         Expr::LitBool { val, .. } => {
-            insts.push(Inst::PushStack(Value::Bool(val)))
+            insts.push(Inst::StackPush(Value::Bool(val)))
         }
         Expr::LitStr { val, .. } => {
-            insts.push(Inst::PushStack(Value::Str(val)))
+            insts.push(Inst::StackPush(Value::Str(val)))
         }
         Expr::LitFunc {
             args,
@@ -156,7 +155,7 @@ fn compile_expr(insts: &mut Vec<Inst>, expr: Expr) {
             for e in elements.into_iter().rev() {
                 compile_expr(insts, e);
             }
-            insts.push(Inst::PushStack(Value::from(elt_count as i64)));
+            insts.push(Inst::StackPush(Value::from(elt_count as i64)));
             insts.push(Inst::BuildArray);
         }
         Expr::LitObj { fields, .. } => {
@@ -164,7 +163,7 @@ fn compile_expr(insts: &mut Vec<Inst>, expr: Expr) {
             for field in fields {
                 match field.key {
                     ObjKey::Static(val, ..) => {
-                        insts.push(Inst::PushStack(Value::from(val)))
+                        insts.push(Inst::StackPush(Value::from(val)))
                     }
                     ObjKey::Dynamic(expr) => {
                         compile_expr(insts, *expr);
@@ -172,56 +171,57 @@ fn compile_expr(insts: &mut Vec<Inst>, expr: Expr) {
                 }
                 compile_expr(insts, *field.val);
             }
-            insts.push(Inst::PushStack(Value::from(fieldct as i64)));
+            insts.push(Inst::StackPush(Value::from(fieldct as i64)));
             insts.push(Inst::BuildObject);
         }
         Expr::Call { expr, args, .. } => {
-            insts.push(Inst::InitCall);
+            insts.push(Inst::CallBegin);
             for arg in args {
                 compile_expr(insts, arg);
-                insts.push(Inst::AddCallArg);
+                insts.push(Inst::CallAppend);
             }
             compile_expr(insts, *expr);
-            insts.push(Inst::FinishCall);
+            insts.push(Inst::CallEnd);
         }
-        Expr::Ident(ident) => insts.push(Inst::LoadNamed(ident.name)),
+        Expr::Ident(ident) => insts.push(Inst::ScopeLoad(ident.name)),
         Expr::Paren { expr, .. } => compile_expr(insts, *expr),
         Expr::Binary {
             lhs, rhs, op_typ, ..
         } => {
             compile_expr(insts, *lhs);
             compile_expr(insts, *rhs);
-            insts.push(Inst::BinaryOp(op_typ));
+            insts.push(Inst::OperationBinary(op_typ));
         }
         Expr::Unary { expr, op_typ, .. } => {
             compile_expr(insts, *expr);
-            insts.push(Inst::UnaryOp(op_typ));
+            insts.push(Inst::OperationUnary(op_typ));
         }
         Expr::Ternary {
             cond, pass, fail, ..
         } => {
             compile_expr(insts, *cond);
             let branch_idx = insts.len();
-            insts.push(Inst::Noop);
+            insts.push(Inst::Illegal);
             let start_pass_idx = insts.len();
             compile_expr(insts, *pass);
             let end_pass_idx = insts.len();
-            insts.push(Inst::Noop);
+            insts.push(Inst::Illegal);
             let start_fail_idx = end_pass_idx + 1;
             compile_expr(insts, *fail);
             let after_idx = insts.len();
-            insts[branch_idx] = Inst::Branch(start_pass_idx, start_fail_idx);
-            insts[end_pass_idx] = Inst::Goto(after_idx);
+            insts[branch_idx] =
+                Inst::BranchConditional(start_pass_idx, start_fail_idx);
+            insts[end_pass_idx] = Inst::BranchGoto(after_idx);
         }
         Expr::Index { expr, index, .. } => {
             compile_expr(insts, *expr);
             compile_expr(insts, *index);
-            insts.push(Inst::Index);
+            insts.push(Inst::OperationIndexGet);
         }
         Expr::Selector { expr, selector, .. } => {
             compile_expr(insts, *expr);
-            insts.push(Inst::PushStack(Value::from(selector.name)));
-            insts.push(Inst::Index);
+            insts.push(Inst::StackPush(Value::from(selector.name)));
+            insts.push(Inst::OperationIndexGet);
         }
     }
 }
@@ -237,7 +237,7 @@ fn compile_func(
     for stmt in body {
         compile_stmt(&mut fn_insts, stmt);
     }
-    insts.push(Inst::MakeFunc {
+    insts.push(Inst::BuildFunc {
         args: args.into_iter().map(|a| a.name.clone()).collect(),
         insts: Rc::from(fn_insts),
         name: name.map(|v| Rc::from(v.as_ref())),
@@ -250,9 +250,8 @@ fn compile_subframe(stmts: Vec<Stmt>) -> Inst {
     for stmt in stmts {
         compile_stmt(&mut sub_insts, stmt);
     }
-    return Inst::Subframe {
-        insts:    Rc::from(sub_insts),
-        on_break: None,
+    return Inst::RunFrame {
+        insts: Rc::from(sub_insts),
     };
 }
 
@@ -261,9 +260,9 @@ fn compile_while_loop(stmts: Vec<Stmt>, on_break: usize) -> Inst {
     for stmt in stmts {
         compile_stmt(&mut sub_insts, stmt);
     }
-    return Inst::Subframe {
-        insts:    Rc::from(sub_insts),
-        on_break: Some(on_break),
+    return Inst::RunLoopFrame {
+        insts: Rc::from(sub_insts),
+        on_break,
     };
 }
 
@@ -272,7 +271,7 @@ fn compile_for_loop(var: String, stmts: Vec<Stmt>, on_break: usize) -> Inst {
     for stmt in stmts {
         compile_stmt(&mut sub_insts, stmt);
     }
-    return Inst::Iterate {
+    return Inst::RunIterFrame {
         var,
         insts: Rc::from(sub_insts),
         on_break,

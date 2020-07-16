@@ -1,7 +1,6 @@
-use super::{
-    source::Pos,
-    token::TokenType,
-};
+use crate::source::Pos;
+use crate::token::TokenType;
+
 use std::fmt::{
     Display,
     Formatter,

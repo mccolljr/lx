@@ -1,14 +1,13 @@
-use super::value::Value;
-use std::{
-    cell::RefCell,
-    collections::HashMap,
-    fmt::{
-        Display,
-        Formatter,
-        Result as FmtResult,
-    },
-    rc::Rc,
+use crate::runtime::value::Value;
+
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::fmt::{
+    Display,
+    Formatter,
+    Result as FmtResult,
 };
+use std::rc::Rc;
 
 #[derive(Debug, Clone)]
 pub struct Scope {
