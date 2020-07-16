@@ -33,13 +33,6 @@ struct ParseScope {
 }
 
 impl ParseScope {
-    fn global() -> Rc<Self> {
-        let s = ParseScope::create(None);
-        s.declare("print".into(), Pos::mark(0)).unwrap();
-        s.declare("do".into(), Pos::mark(0)).unwrap();
-        s
-    }
-
     fn create(parent: Option<Rc<ParseScope>>) -> Rc<Self> {
         Rc::from(ParseScope {
             parent,
@@ -93,13 +86,21 @@ pub struct Parser {
 }
 
 impl Parser {
-    pub fn new(src: &Code, with_scope_tracking: bool) -> Self {
+    pub fn new(
+        src: &Code,
+        with_scope_tracking: bool,
+        globals: Vec<String>,
+    ) -> Self {
         let mut p = Parser {
             lex:        Lexer::new(src),
             cur_t:      Token::new_meta(0, TokenType::EOF),
             peek_t:     Token::new_meta(0, TokenType::EOF),
             scope:      if with_scope_tracking {
-                Some(ParseScope::create(Some(ParseScope::global())))
+                let global = ParseScope::create(None);
+                for name in globals {
+                    global.declare(name, Pos::mark(0)).unwrap();
+                }
+                Some(ParseScope::create(Some(global)))
             } else {
                 None
             },
@@ -833,7 +834,7 @@ mod test {
     macro_rules! assert_expr {
         ($src:expr, $want:expr) => {{
             let src = crate::source::Code::from($src);
-            let mut parser = crate::parser::Parser::new(&src, false);
+            let mut parser = crate::parser::Parser::new(&src, false, vec![]);
             let got = parser.parse_expr(0).unwrap();
             assert_eq!($want, got);
         }};
@@ -842,7 +843,7 @@ mod test {
     macro_rules! assert_expr_str {
         ($src:expr, $want:expr) => {{
             let src = crate::source::Code::from($src);
-            let mut parser = crate::parser::Parser::new(&src, false);
+            let mut parser = crate::parser::Parser::new(&src, false, vec![]);
             let got = format!("{}", parser.parse_expr(0).unwrap());
             assert_eq!($want, got);
         }};

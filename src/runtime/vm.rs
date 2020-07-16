@@ -1,4 +1,5 @@
 use crate::ast::ObjDestructItem;
+use crate::compiler::compile;
 use crate::error::{
     Error,
     Panic,
@@ -14,6 +15,7 @@ use crate::runtime::value::{
 };
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 #[derive(Debug)]
@@ -36,26 +38,29 @@ pub enum FrameStatus {
 }
 
 impl VM {
-    pub fn new(prog: Vec<Inst>) -> Self {
-        VM {
-            state: Rc::new(VMState {
-                stack:      RefCell::new(Vec::with_capacity(2048)),
-                root_scope: Rc::from(Scope::new(None)),
-                insts:      Rc::from(prog),
-            }),
+    pub fn eval(
+        src: impl Into<String>,
+        globals: HashMap<String, Value>,
+    ) -> Result<(), Error> {
+        let insts = Rc::from(compile(
+            src,
+            globals.keys().map(String::clone).collect(),
+        )?);
+        let root_scope = Rc::from(Scope::new(None));
+        for (k, v) in globals {
+            root_scope.declare(k, v);
         }
+        let v = VM {
+            state: Rc::new(VMState {
+                stack: RefCell::new(Vec::with_capacity(2048)),
+                root_scope,
+                insts,
+            }),
+        };
+        v.run()
     }
 
-    pub fn with_global(
-        self,
-        key: impl Into<String>,
-        val: impl Into<Value>,
-    ) -> Self {
-        self.state.root_scope.set(key.into(), val.into());
-        self
-    }
-
-    pub fn run(&self) -> Result<(), Error> {
+    fn run(&self) -> Result<(), Error> {
         self.state.run_frame(
             Rc::clone(&self.state.insts),
             Rc::clone(&self.state.root_scope),
