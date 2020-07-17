@@ -42,6 +42,9 @@ quick_error! {
         InvalidArguments(reason: String) {
             display("invalid arguments: {}", reason)
         }
+        InvalidType(reason: String) {
+            display("invalid type: {}", reason)
+        }
         Generic(reason: String) {
             display("runtime error: {}", reason)
         }

@@ -1,3 +1,4 @@
+pub mod builtin;
 pub mod inst;
 pub mod scope;
 pub mod value;

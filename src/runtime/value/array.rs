@@ -38,6 +38,8 @@ impl Array {
 
     pub fn push_back(&self, val: Value) { self.0.borrow_mut().push_back(val) }
 
+    pub fn push_front(&self, val: Value) { self.0.borrow_mut().push_front(val) }
+
     pub fn index_get(&self, index: usize) -> Value {
         self.0
             .borrow()

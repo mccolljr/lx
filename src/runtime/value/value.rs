@@ -11,6 +11,8 @@ use crate::error::{
 };
 use crate::token::TokenType;
 
+use std::convert::TryFrom;
+
 #[derive(Clone, Debug)]
 pub enum Value {
     Null,
@@ -87,6 +89,76 @@ impl From<Func> for Value {
 
 impl From<NativeFunc> for Value {
     fn from(src: NativeFunc) -> Value { Value::NativeFunc(src) }
+}
+
+impl TryFrom<Value> for i64 {
+    type Error = Error;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Int(v) => Ok(v),
+            Value::Flt(v) => Ok(v as i64),
+            _ => {
+                Err(RuntimeError::InvalidType(format!(
+                    "cannot convert {:?} to an integer",
+                    value
+                ))
+                .into())
+            }
+        }
+    }
+}
+
+impl TryFrom<Value> for f64 {
+    type Error = Error;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Int(v) => Ok(v as f64),
+            Value::Flt(v) => Ok(v),
+            _ => {
+                Err(RuntimeError::InvalidType(format!(
+                    "cannot convert {:?} to a float",
+                    value
+                ))
+                .into())
+            }
+        }
+    }
+}
+
+impl TryFrom<Value> for bool {
+    type Error = Error;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Bool(v) => Ok(v),
+            _ => {
+                Err(RuntimeError::InvalidType(format!(
+                    "cannot convert {:?} to a bool",
+                    value
+                ))
+                .into())
+            }
+        }
+    }
+}
+
+impl TryFrom<Value> for String {
+    type Error = Error;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Str(v) => Ok(v),
+            _ => {
+                Err(RuntimeError::InvalidType(format!(
+                    "cannot convert {:?} to a string",
+                    value
+                ))
+                .into())
+            }
+        }
+    }
 }
 
 impl Value {
@@ -449,6 +521,21 @@ impl Value {
                 .into());
             }
         }
+    }
+
+    pub fn type_of(&self) -> String {
+        use Value::*;
+        (match self {
+            Null => "null",
+            Bool(..) => "bool",
+            Int(..) => "int",
+            Flt(..) => "float",
+            Str(..) => "string",
+            Array(..) => "array",
+            Object(..) => "object",
+            Func { .. } | NativeFunc { .. } => "func",
+        })
+        .into()
     }
 
     pub fn to_string(&self) -> String {

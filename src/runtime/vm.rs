@@ -5,6 +5,10 @@ use crate::error::{
     Panic,
     RuntimeError,
 };
+use crate::runtime::builtin::{
+    builtins,
+    extend_builtins,
+};
 use crate::runtime::inst::Inst;
 use crate::runtime::scope::Scope;
 use crate::runtime::value::{
@@ -40,14 +44,20 @@ pub enum FrameStatus {
 impl VM {
     pub fn eval(
         src: impl Into<String>,
-        globals: HashMap<String, Value>,
+        globals: Option<HashMap<String, Value>>,
     ) -> Result<(), Error> {
+        let global_values = if globals.is_some() {
+            extend_builtins(globals.unwrap())
+        } else {
+            builtins()
+        };
+
         let insts = Rc::from(compile(
             src,
-            globals.keys().map(String::clone).collect(),
+            global_values.keys().map(String::clone).collect(),
         )?);
         let root_scope = Rc::from(Scope::new(None));
-        for (k, v) in globals {
+        for (k, v) in global_values {
             root_scope.declare(k, v);
         }
         let v = VM {
