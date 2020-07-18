@@ -76,6 +76,7 @@ pub enum TokenType {
     KwBreak,
     KwFor,
     KwIn,
+    KwYield,
 }
 
 impl Display for TokenType {
@@ -125,6 +126,7 @@ impl Display for TokenType {
             KwBreak => write!(f, "break"),
             KwFor => write!(f, "for"),
             KwIn => write!(f, "in"),
+            KwYield => write!(f, "yield"),
         }
     }
 }

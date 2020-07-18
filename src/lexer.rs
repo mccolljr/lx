@@ -190,20 +190,23 @@ impl Lexer {
         Ok(Token::new(
             pos,
             match lit.as_ref() {
+                // booleans
+                "true" => KwTrue,
+                "false" => KwFalse,
+                // keywords
                 "let" => KwLet,
                 "fn" => KwFn,
                 "if" => KwIf,
                 "elif" => KwElif,
                 "else" => KwElse,
                 "return" => KwReturn,
-                "true" => KwTrue,
-                "false" => KwFalse,
                 "null" => KwNull,
                 "throw" => KwThrow,
                 "while" => KwWhile,
                 "break" => KwBreak,
                 "for" => KwFor,
                 "in" => KwIn,
+                "yield" => KwYield,
                 _ => Ident,
             },
             lit,

@@ -182,6 +182,18 @@ impl Parser {
                     })
                 }
             }
+            TokenType::KwYield => {
+                if self.func_depth > 0 {
+                    self.parse_yield_stmt()
+                } else {
+                    Err(SyntaxError::NotAllowed {
+                        at:   self.peek_t.pos,
+                        what: String::from(
+                            "yield not allowed outside of function",
+                        ),
+                    })
+                }
+            }
             TokenType::KwBreak => {
                 if self.loop_depth > 0 {
                     Ok(Stmt::Break {
@@ -454,6 +466,15 @@ impl Parser {
         let kwreturn = self.expect(TokenType::KwReturn)?.pos;
         Ok(Stmt::Return {
             kwreturn,
+            expr: Box::new(self.parse_expr(0)?),
+            semi: self.expect(TokenType::Semi)?.pos,
+        })
+    }
+
+    fn parse_yield_stmt(&mut self) -> Result<Stmt, SyntaxError> {
+        let kwyield = self.expect(TokenType::KwYield)?.pos;
+        Ok(Stmt::Yield {
+            kwyield,
             expr: Box::new(self.parse_expr(0)?),
             semi: self.expect(TokenType::Semi)?.pos,
         })

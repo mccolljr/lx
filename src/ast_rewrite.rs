@@ -272,7 +272,8 @@ fn value_to_expr(v: Value, pos: Pos) -> Option<Expr> {
         Value::Bool(v) => Some(Expr::LitBool { val: v, pos }),
         Value::Array(v) => {
             let mut elements = Vec::<Expr>::with_capacity(v.len());
-            for ev in v.value_iter() {
+            let iter = v.value_iter();
+            while let Some(ev) = iter.next() {
                 elements.push(value_to_expr(ev, pos)?);
             }
             Some(Expr::LitArr {

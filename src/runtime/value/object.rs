@@ -1,3 +1,4 @@
+use super::iter::Iter;
 use super::value::Value;
 
 use std::cell::RefCell;
@@ -51,9 +52,11 @@ impl Object {
         false
     }
 
-    pub fn value_iter(&self) -> impl Iterator<Item = Value> {
-        self.rust_iter()
-            .map(|(k, v)| Value::from(&[Value::Str(k), v][..]))
+    pub fn value_iter(&self) -> Iter {
+        let mut items = self
+            .rust_iter()
+            .map(|(k, v)| Value::from(&[Value::Str(k), v][..]));
+        Iter::new(Rc::new(RefCell::new(move || items.next())))
     }
 
     pub fn rust_iter(&self) -> impl Iterator<Item = (String, Value)> {

@@ -1,3 +1,4 @@
+use super::iter::Iter;
 use super::value::Value;
 
 use std::cell::RefCell;
@@ -67,30 +68,17 @@ impl Array {
         ))));
     }
 
-    pub fn value_iter(&self) -> impl Iterator<Item = Value> {
-        ArrayIter {
-            src:  self.clone(),
-            size: self.len(),
-            i:    0,
-        }
-    }
-}
-
-struct ArrayIter {
-    src:  Array,
-    size: usize,
-    i:    usize,
-}
-
-impl Iterator for ArrayIter {
-    type Item = Value;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.i >= self.size {
-            return None;
-        }
-        let next_val = self.src.index_get(self.i);
-        self.i += 1;
-        Some(next_val)
+    pub fn value_iter(&self) -> Iter {
+        let size = self.len();
+        let src = self.clone();
+        let mut i: usize = 0;
+        Iter::new(Rc::new(RefCell::new(move || {
+            if i >= size {
+                return None;
+            }
+            let next_val = src.index_get(i);
+            i += 1;
+            Some(next_val)
+        })))
     }
 }

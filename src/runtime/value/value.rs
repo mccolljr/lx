@@ -3,6 +3,7 @@ use super::funcs::{
     Func,
     NativeFunc,
 };
+use super::iter::Iter;
 use super::object::Object;
 
 use crate::error::{
@@ -24,6 +25,7 @@ pub enum Value {
     Array(Array),
     Func(Func),
     NativeFunc(NativeFunc),
+    Iter(Iter),
 }
 
 impl PartialEq for Value {
@@ -89,6 +91,10 @@ impl From<Func> for Value {
 
 impl From<NativeFunc> for Value {
     fn from(src: NativeFunc) -> Value { Value::NativeFunc(src) }
+}
+
+impl From<Iter> for Value {
+    fn from(src: Iter) -> Value { Value::Iter(src) }
 }
 
 impl TryFrom<Value> for i64 {
@@ -476,11 +482,12 @@ impl Value {
         Ok(Bool(!self.truthy()))
     }
 
-    pub fn iter(&self) -> Result<impl Iterator<Item = Value>, Error> {
+    pub fn iter(&self) -> Result<Iter, Error> {
         use Value::*;
         match self {
-            Object(v) => Ok(ValueIter(Box::new(v.value_iter()))),
-            Array(v) => Ok(ValueIter(Box::new(v.value_iter()))),
+            Object(v) => Ok(v.value_iter()),
+            Array(v) => Ok(v.value_iter()),
+            Iter(v) => Ok(v.clone()),
             _ => {
                 Err(RuntimeError::InvalidOperation(format!(
                     "can't iterate over {:?}",
@@ -501,8 +508,9 @@ impl Value {
             Str(v) => v.len() != 0,
             Array(v) => v.len() != 0,
             Object(v) => v.len() != 0,
-            Func { .. } => true,
-            NativeFunc { .. } => true,
+            Func(..) => true,
+            NativeFunc(..) => true,
+            Iter(..) => true,
         }
     }
 
@@ -533,7 +541,8 @@ impl Value {
             Str(..) => "string",
             Array(..) => "array",
             Object(..) => "object",
-            Func { .. } | NativeFunc { .. } => "func",
+            Func(..) | NativeFunc(..) => "func",
+            Iter(..) => "iter",
         })
         .into()
     }
@@ -546,10 +555,11 @@ impl Value {
             Int(v) => format!("{}", v),
             Flt(v) => format!("{}", v),
             Str(v) => v.clone(),
-            Array(_) => "<array>".into(),
-            Object(_) => "<object>".into(),
-            Func { .. } => "<func>".into(),
-            NativeFunc { .. } => "<native func>".into(),
+            Array(..) => "<array>".into(),
+            Object(..) => "<object>".into(),
+            Func(..) => "<func>".into(),
+            NativeFunc(..) => "<native func>".into(),
+            Iter(..) => "<iter>".into(),
         }
     }
 
@@ -584,12 +594,4 @@ impl Value {
             _ => unreachable!(),
         }
     }
-}
-
-struct ValueIter(Box<dyn Iterator<Item = Value>>);
-
-impl Iterator for ValueIter {
-    type Item = Value;
-
-    fn next(&mut self) -> Option<Self::Item> { self.0.next() }
 }

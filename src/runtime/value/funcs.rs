@@ -2,12 +2,17 @@ use super::value::Value;
 
 use crate::error::{
     Error,
+    Panic,
     RuntimeError,
 };
 use crate::runtime::inst::Inst;
 use crate::runtime::scope::Scope;
-use crate::runtime::vm::VMState;
+use crate::runtime::vm::{
+    FrameStatus,
+    VMState,
+};
 
+use std::cell::Cell;
 use std::fmt::{
     Debug,
     Formatter,
@@ -91,8 +96,10 @@ impl Func {
         for (i, arg) in args.into_iter().enumerate() {
             scope.declare(self.args[i].clone(), arg);
         }
-        self.vm.run_frame(Rc::clone(&self.insts), scope)?;
-        self.vm.pop_stack()
+        match self.vm.run_frame(Rc::clone(&self.insts), scope, 0)? {
+            FrameStatus::Returned => self.vm.pop_stack(),
+            _ => Err(Panic::IllegalInstruction.into()),
+        }
     }
 }
 

@@ -1,5 +1,6 @@
 mod array;
 mod funcs;
+mod iter;
 mod object;
 mod value;
 

@@ -18,6 +18,7 @@ pub enum Inst {
     OperationUnary(TokenType),
     OperationIndexGet,
     OperationIndexSet,
+    BranchIter(String, usize, usize),
     BranchConditional(usize, usize),
     BranchGoto(usize),
     BuildFunc {
@@ -28,6 +29,7 @@ pub enum Inst {
     },
     BuildObject,
     BuildArray,
+    BuildIter,
     RunFrame {
         insts: Rc<[Inst]>,
     },
@@ -35,15 +37,11 @@ pub enum Inst {
         insts:    Rc<[Inst]>,
         on_break: usize,
     },
-    RunIterFrame {
-        var:      String,
-        insts:    Rc<[Inst]>,
-        on_break: usize,
-    },
     CallBegin,
     CallAppend,
     CallEnd,
     ControlReturn,
+    ControlYield,
     ControlThrow,
     ControlBreak,
 }

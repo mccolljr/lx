@@ -38,6 +38,7 @@ pub struct VMState {
 pub enum FrameStatus {
     Broke,    // break statement encountered
     Returned, // return statement encountered
+    Yielded,  // yield statement encountered
     Ended,    // last instruction was executed with no break or return
 }
 
@@ -74,6 +75,7 @@ impl VM {
         self.state.run_frame(
             Rc::clone(&self.state.insts),
             Rc::clone(&self.state.root_scope),
+            0,
         )?;
         Ok(())
     }
@@ -105,8 +107,9 @@ impl VMState {
         self: &Rc<Self>,
         insts: Rc<[Inst]>,
         scope: Rc<Scope>,
+        start_ip: usize,
     ) -> Result<FrameStatus, Error> {
-        let mut ip: usize = 0;
+        let mut ip: usize = start_ip;
         let mut ret_val = Value::Null;
         let mut exit_status = FrameStatus::Ended;
         let ret_sp = self.stack.borrow().len();
@@ -180,6 +183,27 @@ impl VMState {
                 Inst::OperationUnary(typ) => {
                     let target = self.pop_stack()?;
                     self.push_stack(Value::op_unary(&target, typ)?)?;
+                }
+                Inst::BranchIter(name, pass_ip, fail_ip) => {
+                    let iter = self.pop_stack()?;
+                    match iter {
+                        Value::Iter(i) => {
+                            if let Some(v) = i.next() {
+                                scope.declare(name, v);
+                                self.push_stack(Value::from(i))?;
+                                ip = pass_ip;
+                            } else {
+                                ip = fail_ip;
+                            }
+                            continue 'frame;
+                        }
+                        _ => {
+                            return Err(RuntimeError::InvalidOperation(
+                                format!("can't iterate over {:?}", iter),
+                            )
+                            .into())
+                        }
+                    }
                 }
                 Inst::BranchConditional(pass_ip, fail_ip) => {
                     // TODO: protect against invalid or dangerous jumps
@@ -258,6 +282,11 @@ impl VMState {
                     exit_status = FrameStatus::Returned;
                     break 'frame;
                 }
+                Inst::ControlYield => {
+                    ret_val = self.pop_stack()?;
+                    exit_status = FrameStatus::Yielded;
+                    break 'frame;
+                }
                 Inst::BuildObject => {
                     match self.pop_stack()? {
                         Value::Int(field_count) if field_count >= 0 => {
@@ -294,6 +323,9 @@ impl VMState {
                         }
                     }
                 }
+                Inst::BuildIter => {
+                    self.push_stack(Value::from(self.pop_stack()?.iter()?))?;
+                }
                 Inst::OperationIndexGet => {
                     let index = self.pop_stack()?;
                     let target = self.pop_stack()?;
@@ -319,10 +351,16 @@ impl VMState {
                     match self.run_frame(
                         insts,
                         Rc::new(Scope::extend(Rc::clone(&scope))),
+                        0,
                     )? {
                         FrameStatus::Returned => {
                             ret_val = self.pop_stack()?;
                             exit_status = FrameStatus::Returned;
+                            break 'frame;
+                        }
+                        FrameStatus::Yielded => {
+                            ret_val = self.pop_stack()?;
+                            exit_status = FrameStatus::Yielded;
                             break 'frame;
                         }
                         FrameStatus::Broke => {
@@ -339,10 +377,16 @@ impl VMState {
                     match self.run_frame(
                         insts,
                         Rc::new(Scope::extend(Rc::clone(&scope))),
+                        0,
                     )? {
                         FrameStatus::Returned => {
                             ret_val = self.pop_stack()?;
                             exit_status = FrameStatus::Returned;
+                            break 'frame;
+                        }
+                        FrameStatus::Yielded => {
+                            ret_val = self.pop_stack()?;
+                            exit_status = FrameStatus::Yielded;
                             break 'frame;
                         }
                         FrameStatus::Broke => {
@@ -352,32 +396,6 @@ impl VMState {
                         }
                         FrameStatus::Ended => {
                             self.pop_stack()?;
-                        }
-                    }
-                }
-                Inst::RunIterFrame {
-                    var,
-                    insts,
-                    on_break,
-                } => {
-                    let iterator = self.pop_stack()?.iter()?;
-                    let scope = &Rc::new(Scope::extend(Rc::clone(&scope)));
-                    for v in iterator {
-                        scope.declare(var.clone(), v);
-                        match self.run_frame(insts.clone(), Rc::clone(scope))? {
-                            FrameStatus::Returned => {
-                                ret_val = self.pop_stack()?;
-                                exit_status = FrameStatus::Returned;
-                                break 'frame;
-                            }
-                            FrameStatus::Broke => {
-                                self.pop_stack()?;
-                                ip = on_break;
-                                continue 'frame;
-                            }
-                            FrameStatus::Ended => {
-                                self.pop_stack()?;
-                            }
                         }
                     }
                 }

@@ -207,6 +207,11 @@ pub enum Stmt {
         expr:     Box<Expr>,
         semi:     Pos,
     },
+    Yield {
+        kwyield: Pos,
+        expr:    Box<Expr>,
+        semi:    Pos,
+    },
     Throw {
         kwthrow: Pos,
         error:   Box<Expr>,
@@ -285,6 +290,7 @@ impl Display for Stmt {
             }
             Stmt::Expr { expr, .. } => write!(f, "{};", expr),
             Stmt::Return { expr, .. } => write!(f, "return {};", expr),
+            Stmt::Yield { expr, .. } => write!(f, "yield {};", expr),
             Stmt::Throw { error, .. } => write!(f, "throw {};", error),
             Stmt::Break { .. } => write!(f, "break;"),
         }
@@ -343,6 +349,11 @@ impl Node for Stmt {
             }
             Stmt::Return { kwreturn, semi, .. } => {
                 let start = kwreturn.offset;
+                let end = semi.offset + semi.length;
+                Pos::span(start, end - start)
+            }
+            Stmt::Yield { kwyield, semi, .. } => {
+                let start = kwyield.offset;
                 let end = semi.offset + semi.length;
                 Pos::span(start, end - start)
             }
