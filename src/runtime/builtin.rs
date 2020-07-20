@@ -100,8 +100,7 @@ fn filter(args: Vec<Value>) -> Result<Value, Error> {
     let result = Array::new();
     match iter {
         Value::Array(arr) => {
-            let iter = arr.value_iter();
-            while let Some(v) = iter.next() {
+            for v in arr.value_iter() {
                 if f.call(vec![v.clone()])?.truthy() {
                     result.push_back(v);
                 }
@@ -125,8 +124,7 @@ fn map(args: Vec<Value>) -> Result<Value, Error> {
     let result = Array::new();
     match iter {
         Value::Array(arr) => {
-            let iter = arr.value_iter();
-            while let Some(v) = iter.next() {
+            for v in arr.value_iter() {
                 result.push_back(f.call(vec![v.clone()])?);
             }
             Ok(Value::from(result))

@@ -42,6 +42,12 @@ pub enum FrameStatus {
     Ended,    // last instruction was executed with no break or return
 }
 
+#[derive(Debug, Clone)]
+pub struct FrameOutput {
+    pub status: FrameStatus,
+    pub retval: Option<Value>,
+}
+
 impl VM {
     pub fn eval(
         src: impl Into<String>,
@@ -82,19 +88,18 @@ impl VM {
 }
 
 impl VMState {
-    pub(crate) fn pop_stack(self: &Rc<Self>) -> Result<Value, Error> {
+    pub(crate) fn pop_stack(self: &Rc<Self>) -> Value {
         let mut stack = self.stack.borrow_mut();
         if let Some(popped) = stack.pop() {
-            Ok(popped)
+            popped
         } else {
-            Err(Panic::StackUnderflow.into())
+            panic!(Panic::StackUnderflow);
         }
     }
 
-    pub(crate) fn push_stack(self: &Rc<Self>, val: Value) -> Result<(), Error> {
+    pub(crate) fn push_stack(self: &Rc<Self>, val: Value) {
         let mut stack = self.stack.borrow_mut();
         stack.push(val);
-        Ok(())
     }
 
     pub(crate) fn truncate_stack(self: &Rc<Self>, sp: usize) {
@@ -108,34 +113,36 @@ impl VMState {
         insts: Rc<[Inst]>,
         scope: Rc<Scope>,
         start_ip: usize,
-    ) -> Result<FrameStatus, Error> {
+    ) -> Result<FrameOutput, Error> {
         let mut ip: usize = start_ip;
-        let mut ret_val = Value::Null;
-        let mut exit_status = FrameStatus::Ended;
+        let mut output = FrameOutput {
+            status: FrameStatus::Ended,
+            retval: None,
+        };
         let ret_sp = self.stack.borrow().len();
         'frame: loop {
             if ip >= insts.len() {
                 break;
             }
             match insts[ip].clone() {
-                Inst::Illegal => return Err(Panic::IllegalInstruction.into()),
-                Inst::StackPop() => {
-                    self.pop_stack()?;
+                Inst::Illegal => panic!(Panic::IllegalInstruction),
+                Inst::StackPop => {
+                    self.pop_stack();
                 }
                 Inst::StackPush(v) => {
-                    self.push_stack(v)?;
+                    self.push_stack(v);
                 }
                 Inst::ScopeLoad(name) => {
-                    self.push_stack(scope.get(&name))?;
+                    self.push_stack(scope.get(&name));
                 }
                 Inst::ScopeStore(name) => {
-                    scope.set(name, self.pop_stack()?);
+                    scope.set(name, self.pop_stack());
                 }
                 Inst::ScopeDefine(name) => {
-                    scope.declare(name, self.pop_stack()?);
+                    scope.declare(name, self.pop_stack());
                 }
                 Inst::DestructureArray(names) => {
-                    let source = self.pop_stack()?;
+                    let source = self.pop_stack();
                     if let Value::Array(arr) = source {
                         for (i, name) in names.iter().enumerate() {
                             scope.declare(name.clone(), arr.index_get(i));
@@ -149,7 +156,7 @@ impl VMState {
                     }
                 }
                 Inst::DestructureObject(items) => {
-                    let source = self.pop_stack()?;
+                    let source = self.pop_stack();
                     if let Value::Object(obj) = source {
                         for item in items.iter() {
                             match item {
@@ -176,21 +183,21 @@ impl VMState {
                     }
                 }
                 Inst::OperationBinary(typ) => {
-                    let rhs = self.pop_stack()?;
-                    let lhs = self.pop_stack()?;
-                    self.push_stack(Value::op_binary(&lhs, &rhs, typ)?)?;
+                    let rhs = self.pop_stack();
+                    let lhs = self.pop_stack();
+                    self.push_stack(Value::op_binary(&lhs, &rhs, typ)?);
                 }
                 Inst::OperationUnary(typ) => {
-                    let target = self.pop_stack()?;
-                    self.push_stack(Value::op_unary(&target, typ)?)?;
+                    let target = self.pop_stack();
+                    self.push_stack(Value::op_unary(&target, typ)?);
                 }
                 Inst::BranchIter(name, pass_ip, fail_ip) => {
-                    let iter = self.pop_stack()?;
+                    let iter = self.pop_stack();
                     match iter {
-                        Value::Iter(i) => {
+                        Value::Iter(mut i) => {
                             if let Some(v) = i.next() {
                                 scope.declare(name, v);
-                                self.push_stack(Value::from(i))?;
+                                self.push_stack(Value::from(i));
                                 ip = pass_ip;
                             } else {
                                 ip = fail_ip;
@@ -207,7 +214,7 @@ impl VMState {
                 }
                 Inst::BranchConditional(pass_ip, fail_ip) => {
                     // TODO: protect against invalid or dangerous jumps
-                    if self.pop_stack()?.truthy() {
+                    if self.pop_stack().truthy() {
                         ip = pass_ip;
                     } else {
                         ip = fail_ip;
@@ -237,114 +244,109 @@ impl VMState {
                         } else {
                             None
                         },
-                    )))?;
+                    )));
                 }
                 Inst::CallBegin => {
-                    self.push_stack(Value::Int(0))?;
+                    self.push_stack(Value::Int(0));
                 }
                 Inst::CallAppend => {
-                    let arg = self.pop_stack()?;
-                    if let Value::Int(argct) = self.pop_stack()? {
-                        self.push_stack(arg)?;
-                        self.push_stack(Value::Int(argct + 1))?;
+                    let arg = self.pop_stack();
+                    if let Value::Int(argct) = self.pop_stack() {
+                        self.push_stack(arg);
+                        self.push_stack(Value::Int(argct + 1));
                     } else {
-                        return Err(Panic::MalformedStack(
+                        panic!(Panic::MalformedStack(
                             "invalid argct when adding arg",
-                        )
-                        .into());
+                        ));
                     };
                 }
                 Inst::CallEnd => {
-                    let target = self.pop_stack()?;
-                    if let Value::Int(argct) = self.pop_stack()? {
+                    let target = self.pop_stack();
+                    if let Value::Int(argct) = self.pop_stack() {
                         if argct < 0 {
-                            return Err(Panic::MalformedStack(
+                            panic!(Panic::MalformedStack(
                                 "negative argct when finishing call",
-                            )
-                            .into());
+                            ));
                         }
                         let mut args =
                             Vec::<Value>::with_capacity(argct as usize);
                         for _ in 0..argct {
-                            args.push(self.pop_stack()?);
+                            args.push(self.pop_stack());
                         }
                         args.reverse();
-                        self.push_stack(target.call(args)?)?;
+                        self.push_stack(target.call(args)?);
                     } else {
-                        return Err(Panic::MalformedStack(
+                        panic!(Panic::MalformedStack(
                             "non-integer argct when finishing call",
-                        )
-                        .into());
+                        ));
                     }
                 }
                 Inst::ControlReturn => {
-                    ret_val = self.pop_stack()?;
-                    exit_status = FrameStatus::Returned;
+                    output.retval = Some(self.pop_stack());
+                    output.status = FrameStatus::Returned;
                     break 'frame;
                 }
                 Inst::ControlYield => {
-                    ret_val = self.pop_stack()?;
-                    exit_status = FrameStatus::Yielded;
+                    output.retval = Some(self.pop_stack());
+                    output.status = FrameStatus::Yielded;
                     break 'frame;
                 }
                 Inst::BuildObject => {
-                    match self.pop_stack()? {
+                    match self.pop_stack() {
                         Value::Int(field_count) if field_count >= 0 => {
                             let obj = Object::new();
                             for _ in 0..field_count {
-                                let val = self.pop_stack()?;
-                                let key = self.pop_stack()?;
+                                let val = self.pop_stack();
+                                let key = self.pop_stack();
                                 obj.index_set(key.to_string(), val);
                             }
-                            self.push_stack(Value::Object(obj))?;
+                            self.push_stack(Value::Object(obj));
                         }
                         _ => {
-                            return Err(Panic::MalformedStack(
+                            panic!(Panic::MalformedStack(
                                 "invalid field count when building object",
-                            )
-                            .into())
+                            ))
                         }
                     }
                 }
                 Inst::BuildArray => {
-                    match self.pop_stack()? {
+                    match self.pop_stack() {
                         Value::Int(element_count) if element_count >= 0 => {
                             let arr = Array::new();
                             for _ in 0..element_count {
-                                arr.push_back(self.pop_stack()?);
+                                arr.push_back(self.pop_stack());
                             }
-                            self.push_stack(Value::Array(arr))?;
+                            self.push_stack(Value::Array(arr));
                         }
                         _ => {
-                            return Err(Panic::MalformedStack(
+                            panic!(Panic::MalformedStack(
                                 "invalid element count when building array",
-                            )
-                            .into())
+                            ))
                         }
                     }
                 }
                 Inst::BuildIter => {
-                    self.push_stack(Value::from(self.pop_stack()?.iter()?))?;
+                    self.push_stack(Value::from(self.pop_stack().iter()?));
                 }
                 Inst::OperationIndexGet => {
-                    let index = self.pop_stack()?;
-                    let target = self.pop_stack()?;
-                    self.push_stack(target.op_index(&index)?)?;
+                    let index = self.pop_stack();
+                    let target = self.pop_stack();
+                    self.push_stack(target.op_index(&index)?);
                 }
                 Inst::OperationIndexSet => {
-                    let value = self.pop_stack()?;
-                    let index = self.pop_stack()?;
-                    let target = self.pop_stack()?;
+                    let value = self.pop_stack();
+                    let index = self.pop_stack();
+                    let target = self.pop_stack();
                     target.op_index_set(&index, &value)?;
                 }
                 Inst::ControlThrow => {
                     return Err(RuntimeError::Generic(
-                        self.pop_stack()?.to_string(),
+                        self.pop_stack().to_string(),
                     )
                     .into());
                 }
                 Inst::ControlBreak => {
-                    exit_status = FrameStatus::Broke;
+                    output.status = FrameStatus::Broke;
                     break 'frame;
                 }
                 Inst::RunFrame { insts } => {
@@ -353,24 +355,26 @@ impl VMState {
                         Rc::new(Scope::extend(Rc::clone(&scope))),
                         0,
                     )? {
-                        FrameStatus::Returned => {
-                            ret_val = self.pop_stack()?;
-                            exit_status = FrameStatus::Returned;
+                        FrameOutput { status, retval }
+                            if [
+                                FrameStatus::Returned,
+                                FrameStatus::Yielded,
+                            ]
+                            .contains(&status) =>
+                        {
+                            output.retval = retval;
+                            output.status = status;
                             break 'frame;
                         }
-                        FrameStatus::Yielded => {
-                            ret_val = self.pop_stack()?;
-                            exit_status = FrameStatus::Yielded;
+                        FrameOutput {
+                            status: FrameStatus::Broke,
+                            ..
+                        } => {
+                            output.retval = None;
+                            output.status = FrameStatus::Broke;
                             break 'frame;
                         }
-                        FrameStatus::Broke => {
-                            self.pop_stack()?;
-                            exit_status = FrameStatus::Broke;
-                            break 'frame;
-                        }
-                        FrameStatus::Ended => {
-                            self.pop_stack()?;
-                        }
+                        _ => {}
                     }
                 }
                 Inst::RunLoopFrame { insts, on_break } => {
@@ -379,31 +383,61 @@ impl VMState {
                         Rc::new(Scope::extend(Rc::clone(&scope))),
                         0,
                     )? {
-                        FrameStatus::Returned => {
-                            ret_val = self.pop_stack()?;
-                            exit_status = FrameStatus::Returned;
+                        FrameOutput { status, retval }
+                            if [
+                                FrameStatus::Returned,
+                                FrameStatus::Yielded,
+                            ]
+                            .contains(&status) =>
+                        {
+                            output.retval = retval;
+                            output.status = status;
                             break 'frame;
                         }
-                        FrameStatus::Yielded => {
-                            ret_val = self.pop_stack()?;
-                            exit_status = FrameStatus::Yielded;
-                            break 'frame;
-                        }
-                        FrameStatus::Broke => {
-                            self.pop_stack()?;
+                        FrameOutput {
+                            status: FrameStatus::Broke,
+                            ..
+                        } => {
                             ip = on_break;
                             continue 'frame;
                         }
-                        FrameStatus::Ended => {
-                            self.pop_stack()?;
+                        _ => {}
+                    }
+                }
+                Inst::RunIterFrame { insts, on_break } => {
+                    match self.run_frame(
+                        insts,
+                        Rc::new(Scope::extend(Rc::clone(&scope))),
+                        0,
+                    )? {
+                        FrameOutput { status, retval }
+                            if [
+                                FrameStatus::Returned,
+                                FrameStatus::Yielded,
+                            ]
+                            .contains(&status) =>
+                        {
+                            output.retval = retval;
+                            output.status = status;
+                            break 'frame;
                         }
+                        FrameOutput { status, .. }
+                            if [FrameStatus::Broke, FrameStatus::Ended]
+                                .contains(&status) =>
+                        {
+                            if status == FrameStatus::Broke {
+                                self.pop_stack(); // remove iter from stack
+                            }
+                            ip = on_break;
+                            continue 'frame;
+                        }
+                        _ => {}
                     }
                 }
             }
             ip += 1;
         }
         self.truncate_stack(ret_sp);
-        self.push_stack(ret_val)?;
-        Ok(exit_status)
+        Ok(output)
     }
 }

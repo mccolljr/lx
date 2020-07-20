@@ -8,7 +8,7 @@ use std::rc::Rc;
 pub enum Inst {
     Illegal,
     StackPush(Value),
-    StackPop(),
+    StackPop,
     ScopeLoad(String),
     ScopeStore(String),
     ScopeDefine(String),
@@ -34,6 +34,10 @@ pub enum Inst {
         insts: Rc<[Inst]>,
     },
     RunLoopFrame {
+        insts:    Rc<[Inst]>,
+        on_break: usize,
+    },
+    RunIterFrame {
         insts:    Rc<[Inst]>,
         on_break: usize,
     },

@@ -8,11 +8,11 @@ use crate::error::{
 use crate::runtime::inst::Inst;
 use crate::runtime::scope::Scope;
 use crate::runtime::vm::{
+    FrameOutput,
     FrameStatus,
     VMState,
 };
 
-use std::cell::Cell;
 use std::fmt::{
     Debug,
     Formatter,
@@ -97,8 +97,13 @@ impl Func {
             scope.declare(self.args[i].clone(), arg);
         }
         match self.vm.run_frame(Rc::clone(&self.insts), scope, 0)? {
-            FrameStatus::Returned => self.vm.pop_stack(),
-            _ => Err(Panic::IllegalInstruction.into()),
+            FrameOutput { status, retval }
+                if [FrameStatus::Returned, FrameStatus::Ended]
+                    .contains(&status) =>
+            {
+                Ok(retval.map_or(Value::Null, |v| v))
+            }
+            _ => panic!(Panic::IllegalFuncFrameStatus),
         }
     }
 }

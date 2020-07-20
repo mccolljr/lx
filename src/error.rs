@@ -66,6 +66,9 @@ quick_error! {
         IllegalInstruction {
             display("PANIC: ILLEGAL INSTRUCTION")
         }
+        IllegalFuncFrameStatus {
+            display("PANIC: ILLEGAL FUNC FRAME STATUS")
+        }
     }
 }
 
@@ -79,11 +82,6 @@ quick_error! {
         }
         Runtime(err: RuntimeError) {
             from(src: RuntimeError) -> (src)
-            cause(err)
-            display("{}", err)
-        }
-        Panic(err: Panic) {
-            from(src: Panic) -> (src)
             cause(err)
             display("{}", err)
         }

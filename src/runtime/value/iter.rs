@@ -33,6 +33,10 @@ impl Iter {
     pub fn new(next: Rc<RefCell<dyn FnMut() -> Option<Value>>>) -> Self {
         Iter { next }
     }
+}
 
-    pub fn next(&self) -> Option<Value> { (self.next.borrow_mut())() }
+impl Iterator for Iter {
+    type Item = Value;
+
+    fn next(&mut self) -> Option<Value> { (self.next.borrow_mut())() }
 }

@@ -20,7 +20,7 @@ fn compile_stmt(insts: &mut Vec<Inst>, stmt: Stmt) {
     match stmt {
         Stmt::Expr { expr, .. } => {
             compile_expr(insts, simplify_expr(*expr));
-            insts.push(Inst::StackPop());
+            insts.push(Inst::StackPop);
         }
         Stmt::Let { target, expr, .. } => {
             compile_expr(insts, simplify_expr(*expr));
@@ -272,19 +272,18 @@ fn compile_while_loop(stmts: Vec<Stmt>, on_break: usize) -> Inst {
 }
 
 fn compile_for_loop(var: String, stmts: Vec<Stmt>, on_break: usize) -> Inst {
-    let mut sub_insts = Vec::<Inst>::with_capacity(stmts.len());
-    let branch_idx = sub_insts.len();
-    sub_insts.push(Inst::Illegal);
-    let break_idx = sub_insts.len();
-    sub_insts.push(Inst::ControlBreak);
-    let start_idx = sub_insts.len();
-    sub_insts[branch_idx] = Inst::BranchIter(var.clone(), start_idx, break_idx);
+    let mut insts = Vec::<Inst>::with_capacity(stmts.len());
+    let branch_idx = insts.len();
+    insts.push(Inst::Illegal);
+    let body_idx = insts.len();
     for stmt in stmts {
-        compile_stmt(&mut sub_insts, stmt);
+        compile_stmt(&mut insts, stmt);
     }
-    sub_insts.push(Inst::BranchGoto(branch_idx));
-    return Inst::RunLoopFrame {
-        insts: Rc::from(sub_insts),
+    insts.push(Inst::BranchGoto(branch_idx));
+    let end_idx = insts.len();
+    insts[branch_idx] = Inst::BranchIter(var.clone(), body_idx, end_idx);
+    return Inst::RunIterFrame {
+        insts: Rc::from(insts),
         on_break,
     };
 }
