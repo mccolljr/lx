@@ -11,6 +11,13 @@ mod runtime;
 mod source;
 mod token;
 
+#[cfg(test)]
+mod tests;
+
+#[cfg(test)]
+#[macro_use]
+extern crate insta;
+
 fn main() {
     use runtime::vm::VM;
     let args: Vec<String> = std::env::args().collect();

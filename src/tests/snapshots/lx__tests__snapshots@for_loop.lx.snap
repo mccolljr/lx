@@ -1,0 +1,18 @@
+---
+source: src/tests/mod.rs
+expression: output_str
+input_file: src/tests/testdata/for_loop.lx
+---
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+OK!
+
