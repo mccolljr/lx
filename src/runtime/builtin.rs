@@ -4,12 +4,15 @@ use crate::error::{
 };
 use crate::runtime::value::{
     Array,
+    Iter,
     NativeFunc,
     Value,
 };
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::convert::TryFrom;
+use std::rc::Rc;
 
 macro_rules! assert_args {
     ($args:expr => exactly $exact:expr) => {{
@@ -65,17 +68,27 @@ fn range(args: Vec<Value>) -> Result<Value, Error> {
     assert_args!(args => exactly 2);
     let start = i64::try_from(args[0].clone())?;
     let end = i64::try_from(args[1].clone())?;
-    let result = Array::new();
     if end < start {
-        for i in end..=start {
-            result.push_front(Value::from(i));
-        }
-    } else {
-        for i in start..=end {
-            result.push_back(Value::from(i));
-        }
+        let mut i = end;
+        return Ok(Value::from(Iter::new(Rc::new(RefCell::new(move || {
+            if i < start {
+                return None;
+            }
+            let next_val = Some(Value::from(i));
+            i -= 1;
+            next_val
+        })))));
     }
-    Ok(Value::from(result))
+
+    let mut i = start;
+    return Ok(Value::from(Iter::new(Rc::new(RefCell::new(move || {
+        if i > end {
+            return None;
+        }
+        let next_val = Some(Value::from(i));
+        i += 1;
+        next_val
+    })))));
 }
 
 fn len(args: Vec<Value>) -> Result<Value, Error> {

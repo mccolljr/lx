@@ -9,5 +9,6 @@ pub use funcs::{
     Func,
     NativeFunc,
 };
+pub use iter::Iter;
 pub use object::Object;
 pub use value::Value;

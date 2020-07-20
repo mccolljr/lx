@@ -1,0 +1,15 @@
+for i in range(0,10) {
+    for j in range(0,10) {
+        for k in range(0,10) {
+            print('k:', k);
+            if k == 3 {
+                break;
+            }
+        }
+        print('j:', j);
+        if j == 5 {
+            break;
+        }
+    }
+    print('i:', i);
+}
