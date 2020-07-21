@@ -583,6 +583,14 @@ impl Parser {
     fn parse_primary_expr(&mut self) -> Result<Expr, SyntaxError> {
         self.advance()?;
         match self.cur_t.typ {
+            TokenType::KwImport => {
+                Ok(Expr::Import {
+                    kwimport: self.cur_t.pos,
+                    oparen:   self.expect(TokenType::OParen)?.pos,
+                    name:     self.expect(TokenType::LitString)?.lit,
+                    cparen:   self.expect(TokenType::CParen)?.pos,
+                })
+            }
             TokenType::KwNull => {
                 Ok(Expr::LitNull {
                     pos: self.cur_t.pos,

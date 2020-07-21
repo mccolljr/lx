@@ -7,6 +7,7 @@ use std::rc::Rc;
 #[derive(Debug, Clone, PartialEq)]
 pub enum Inst {
     Illegal,
+    Import(String),
     StackPush(Value),
     StackPop,
     ScopeLoad(String),

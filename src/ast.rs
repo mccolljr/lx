@@ -453,6 +453,12 @@ pub enum Expr {
         dot:      Pos,
         selector: Ident,
     },
+    Import {
+        kwimport: Pos,
+        oparen:   Pos,
+        name:     String,
+        cparen:   Pos,
+    },
 }
 
 impl Display for Expr {
@@ -542,6 +548,9 @@ impl Display for Expr {
             Expr::Selector { expr, selector, .. } => {
                 write!(f, "({}.{})", expr, selector.name)?;
             }
+            Expr::Import { name, .. } => {
+                write!(f, "import({:?})", name)?;
+            }
         }
         Ok(())
     }
@@ -609,6 +618,13 @@ impl Node for Expr {
             Expr::Selector { expr, selector, .. } => {
                 let start = expr.pos().offset;
                 let end = selector.pos.offset + selector.pos.length;
+                Pos::span(start, end - start)
+            }
+            Expr::Import {
+                kwimport, cparen, ..
+            } => {
+                let start = kwimport.offset;
+                let end = cparen.offset + cparen.length;
                 Pos::span(start, end - start)
             }
         }

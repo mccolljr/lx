@@ -33,6 +33,10 @@ impl Scope {
         }
     }
 
+    pub fn names(&self) -> Vec<String> {
+        self.entries.borrow().keys().map(Clone::clone).collect()
+    }
+
     pub fn declare(&self, key: String, val: Value) {
         self.entries.borrow_mut().insert(key, val);
     }

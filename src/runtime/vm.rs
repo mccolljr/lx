@@ -27,13 +27,6 @@ pub struct VM {
     state: Rc<VMState>,
 }
 
-#[derive(Debug)]
-pub struct VMState {
-    stack:      RefCell<Vec<Value>>,
-    root_scope: Rc<Scope>,
-    insts:      Rc<[Inst]>,
-}
-
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum FrameStatus {
     Broke,    // break statement encountered
@@ -72,6 +65,7 @@ impl VM {
                 stack: RefCell::new(Vec::with_capacity(2048)),
                 root_scope,
                 insts,
+                imports: RefCell::new(HashMap::new()),
             }),
         };
         v.run()
@@ -80,11 +74,19 @@ impl VM {
     fn run(&self) -> Result<(), Error> {
         self.state.run_frame(
             Rc::clone(&self.state.insts),
-            Rc::clone(&self.state.root_scope),
+            Rc::new(Scope::new(Some(Rc::clone(&self.state.root_scope)))),
             0,
         )?;
         Ok(())
     }
+}
+
+#[derive(Debug)]
+pub struct VMState {
+    stack:      RefCell<Vec<Value>>,
+    root_scope: Rc<Scope>,
+    insts:      Rc<[Inst]>,
+    imports:    RefCell<HashMap<String, Object>>,
 }
 
 impl VMState {
@@ -107,6 +109,30 @@ impl VMState {
         stack.truncate(sp);
     }
 
+    pub(crate) fn import(
+        self: &Rc<Self>,
+        path: String,
+    ) -> Result<Value, Error> {
+        if let Some(existing) = self.imports.borrow().get(&path) {
+            return Ok(Value::Object(existing.clone()));
+        }
+        let src = std::fs::read_to_string(path).expect("unable to import");
+        let insts: Rc<[Inst]> =
+            Rc::from(compile(src, self.root_scope.names())?);
+        let import_scope =
+            Rc::new(Scope::new(Some(Rc::clone(&self.root_scope))));
+        match self.run_frame(insts, import_scope.clone(), 0)?.status {
+            FrameStatus::Ended => { /* all good */ }
+            _ => panic!("PANIC: UNEXPECTED IMPORT FRAME STATUS"),
+        }
+        let import = Object::new();
+        for name in import_scope.names() {
+            let v = import_scope.get(&name);
+            import.index_set(name, v);
+        }
+        Ok(Value::from(import.clone()))
+    }
+
     #[inline(always)]
     pub(crate) fn run_frame(
         self: &Rc<Self>,
@@ -126,6 +152,9 @@ impl VMState {
             }
             match insts[ip].clone() {
                 Inst::Illegal => panic!(Panic::IllegalInstruction),
+                Inst::Import(name) => {
+                    self.push_stack(self.import(name)?);
+                }
                 Inst::StackPop => {
                     self.pop_stack();
                 }

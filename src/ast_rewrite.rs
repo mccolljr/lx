@@ -85,6 +85,7 @@ fn const_val(x: &Expr) -> Option<Value> {
         Expr::Call { .. } => None,
         Expr::Ident { .. } => None,
         Expr::LitFunc { .. } => None,
+        Expr::Import { .. } => None,
     }
 }
 
@@ -107,7 +108,8 @@ pub fn simplify_expr(x: Expr) -> Expr {
         | Expr::LitStr { .. }
         | Expr::LitFunc { .. }
         | Expr::Ident { .. }
-        | Expr::Selector { .. } => x,
+        | Expr::Selector { .. }
+        | Expr::Import { .. } => x,
         Expr::LitArr {
             elements,
             osquare,

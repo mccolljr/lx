@@ -77,6 +77,7 @@ pub enum TokenType {
     KwFor,
     KwIn,
     KwYield,
+    KwImport,
 
     Comment,
 }
@@ -129,6 +130,7 @@ impl Display for TokenType {
             KwFor => write!(f, "for"),
             KwIn => write!(f, "in"),
             KwYield => write!(f, "yield"),
+            KwImport => write!(f, "import"),
             Comment => write!(f, "comment"),
         }
     }

@@ -270,6 +270,7 @@ impl Lexer {
                 "for" => KwFor,
                 "in" => KwIn,
                 "yield" => KwYield,
+                "import" => KwImport,
                 _ => Ident,
             },
             lit,

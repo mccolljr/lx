@@ -228,6 +228,9 @@ fn compile_expr(insts: &mut Vec<Inst>, expr: Expr) {
             insts.push(Inst::StackPush(Value::from(selector.name)));
             insts.push(Inst::OperationIndexGet);
         }
+        Expr::Import { name, .. } => {
+            insts.push(Inst::Import(name));
+        }
     }
 }
 
