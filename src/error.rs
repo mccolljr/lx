@@ -30,6 +30,9 @@ quick_error! {
         NotAllowed{at: Pos, what: String} {
             display("{} at {:?}", what, at)
         }
+        UnterminatedBlockComment{at: Pos} {
+            display("unterminated block comment at {:?}", at)
+        }
     }
 }
 

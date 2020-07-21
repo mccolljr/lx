@@ -56,7 +56,7 @@ impl Lexer {
             '+' => self.lex_1(OpAdd),
             '-' => self.lex_1(OpSub),
             '*' => self.lex_1(OpMul),
-            '/' => self.lex_1(OpDiv),
+            '/' => self.lex_opdiv_or_comment(),
             '%' => self.lex_1(OpRem),
             '(' => self.lex_1(OParen),
             ')' => self.lex_1(CParen),
@@ -129,6 +129,61 @@ impl Lexer {
             }
         }
         self.lex_1(fallback)
+    }
+
+    fn lex_opdiv_or_comment(&mut self) -> Result<Token, SyntaxError> {
+        match self.peek_c {
+            '/' => {
+                // line comment, read to end of line
+                let start = self.cur_i;
+                self.advance();
+                let text_start = self.peek_i;
+                while !self.peek_eof() && self.peek_c != '\n' {
+                    self.advance();
+                }
+                let end = self.peek_i;
+                Ok(Token::new(
+                    Pos::span(start, end - start),
+                    TokenType::Comment,
+                    self.src[Pos::span(text_start, end - text_start)]
+                        .iter()
+                        .collect::<String>(),
+                ))
+            }
+            '*' => {
+                // block comment, read to end of block
+                let start = self.cur_i;
+                self.advance();
+                let text_start = self.peek_i;
+                loop {
+                    if self.peek_eof() {
+                        return Err(SyntaxError::UnterminatedBlockComment {
+                            at: Pos::span(start, self.peek_i - start),
+                        });
+                    }
+                    if self.peek_c == '*' {
+                        self.advance();
+                        let maybe_text_end = self.cur_i;
+                        if self.peek_c == '/' {
+                            self.advance();
+                            let end = self.peek_i;
+                            return Ok(Token::new(
+                                Pos::span(start, end - start),
+                                TokenType::Comment,
+                                self.src[Pos::span(
+                                    text_start,
+                                    maybe_text_end - text_start,
+                                )]
+                                .iter()
+                                .collect::<String>(),
+                            ));
+                        }
+                    }
+                    self.advance();
+                }
+            }
+            _ => self.lex_1(TokenType::OpDiv),
+        }
     }
 
     fn lex_number(&mut self) -> Result<Token, SyntaxError> {
@@ -355,5 +410,11 @@ mod tests {
         assert_tokens!("()", OParen(0, 1, "("), CParen(1, 1, ")"));
         assert_tokens!("{}", OBrace(0, 1, "{"), CBrace(1, 1, "}"));
         assert_tokens!(";", Semi(0, 1, ";"));
+    }
+
+    #[test]
+    fn test_lex_comments() {
+        assert_tokens!("//abc", Comment(0, 5, "abc"));
+        assert_tokens!("/*abc\ndef*/", Comment(0, 11, "abc\ndef"));
     }
 }
