@@ -1,16 +1,42 @@
-use std::process::Command;
+use std::io::Read;
+use std::process::{
+    Command,
+    Stdio,
+};
 
 #[test]
 fn test_snapshots() {
     glob!("testdata/*.lx", |path| {
         println!("testing {:?}", path);
-        let output = Command::new("cargo")
+        let mut child = Command::new("cargo")
             .arg("run")
             .arg(path)
-            .output()
-            .expect("failed to execute test");
-        let output_str =
-            String::from_utf8(output.stdout).expect("oops, output not utf8");
+            .stdout(Stdio::piped())
+            .spawn()
+            .expect("failed to spawn test");
+        let exit_status = child.wait().expect("failed to run test");
+        let mut output_str = String::new();
+        child
+            .stdout
+            .expect("no stdout for test")
+            .read_to_string(&mut output_str)
+            .expect("can't read test output");
+
+        if path.to_str().unwrap().ends_with("_error.lx") {
+            if exit_status.success() {
+                panic!(
+                    "expected failure, got success: {:?}\n{}",
+                    path, output_str
+                );
+            }
+        } else {
+            if !exit_status.success() {
+                panic!(
+                    "expected success, got failure: {:?}\n{}",
+                    path, output_str
+                );
+            }
+        }
         assert_snapshot!(output_str);
     });
 }

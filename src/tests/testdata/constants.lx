@@ -1,0 +1,24 @@
+let an_int = 1;
+let a_float = 1.5;
+let a_large_float = 1.5e-12;
+let a_string_single = 'abc';
+let a_string_double = 'def';
+let multiline_string = '
+abc
+    def
+        ghi
+            jkl
+';
+let T = true;
+let F = false;
+let N = null;
+
+print(an_int);
+print(a_float);
+print(a_large_float);
+print(a_string_double);
+print(a_string_single);
+print(multiline_string);
+print(T);
+print(F);
+print(N);

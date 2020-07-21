@@ -1,4 +1,63 @@
-// comment
-/* comment
-     two */
-print('hello, world');
+// numeric constants
+let an_int = 1;
+let a_float = 1.5;
+let a_large_float = 13e15;
+
+/* string constants */
+let a_string_single = 'abc\n\tdef';
+let a_string_double = "abcd\n\tef";
+
+// control structures
+for x in range(0,1) {
+     print(x);
+}
+
+let i = 0;
+while i <= 10 {
+     print(i);
+     i = i+1;
+     if i == 10 {
+          break;
+     } elif i == 11 {
+          // never happens
+     } else {
+          print('not 10 yet!');
+     }
+}
+
+// functions
+fn greet(name) {
+     return 'Hello, ' + name + '!';
+}
+
+let greet2 = fn(name) {
+     return 'Hello again, ' + name + '!';
+};
+
+print(greet('Jake'));
+print(greet2('Jake'));
+
+/* language constants */
+let T = true;
+let F = false;
+let N = null;
+
+for i in range(1,2) {
+     print('in r:', i);
+}
+
+let arr = [
+     1,
+     1.5,
+     1e5,
+     true,
+     false,
+     "abc",
+     'def',
+     null,
+     {
+          'a': 'a',
+          'b': 'b',
+          'c': 'c',
+     }
+];

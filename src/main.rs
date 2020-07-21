@@ -30,6 +30,9 @@ fn main() {
     let result = VM::eval(script, None);
     match result {
         Ok(_) => println!("OK!"),
-        Err(e) => println!("ERROR! {}", e),
+        Err(e) => {
+            println!("ERROR! {}", e);
+            std::process::exit(100);
+        }
     }
 }

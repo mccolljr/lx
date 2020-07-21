@@ -203,6 +203,12 @@ impl Lexer {
                     });
                 }
                 has_exp = true;
+                self.advance();
+                // special case: allow a negative sign right after the e
+                if self.peek_c == '-' {
+                    self.advance();
+                }
+                continue;
             }
 
             if self.peek_c == '.' {
@@ -214,6 +220,8 @@ impl Lexer {
                     });
                 }
                 has_decimal = true;
+                self.advance();
+                continue;
             }
 
             self.advance();
@@ -371,6 +379,7 @@ mod tests {
         assert_tokens!("1.5", LitFloat(0, 3, "1.5"));
         assert_tokens!("1e5", LitFloat(0, 3, "1e5"));
         assert_tokens!("1.5e5", LitFloat(0, 5, "1.5e5"));
+        assert_tokens!("1.5e-5", LitFloat(0, 6, "1.5e-5"));
 
         assert_tokens!("true", KwTrue(0, 4, "true"));
         assert_tokens!("false", KwFalse(0, 5, "false"));
