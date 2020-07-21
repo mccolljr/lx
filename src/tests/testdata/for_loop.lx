@@ -1,4 +1,25 @@
-let range = [0,1,2,3,4,5,6,7,8,9,10];
-for i in range {
+let arr = [0,1,2,3,4,5,6,7,8,9,10];
+
+// can iterate array once
+for i in arr {
     print(i);
+}
+
+// can iterate array many times
+for i in arr {
+    print(i);
+}
+
+let obj = {'a': 1, 'b': 2, 'c': 3};
+
+// can iterate object once
+for item in obj {
+    let [k,v] = item;
+    print(k, '=', v);
+}
+
+// can iterate object many times
+for item in obj {
+    let [k,v] = item;
+    print(k, '=', v);
 }
