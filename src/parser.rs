@@ -792,7 +792,11 @@ impl Parser {
     }
 
     fn advance(&mut self) -> Result<(), SyntaxError> {
-        self.cur_t = std::mem::replace(&mut self.peek_t, self.lex.next()?);
+        let mut nex_t = self.lex.next()?;
+        while nex_t.typ == TokenType::Comment {
+            nex_t = self.lex.next()?;
+        }
+        self.cur_t = std::mem::replace(&mut self.peek_t, nex_t);
         Ok(())
     }
 
