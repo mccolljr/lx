@@ -33,6 +33,8 @@ impl PartialEq for Value {
         match (self, other) {
             (Value::Null, Value::Null) => true,
             (Value::Int(si), Value::Int(oi)) => si == oi,
+            (Value::Int(si), Value::Flt(of)) => *si as f64 == *of,
+            (Value::Flt(sf), Value::Int(oi)) => *sf == *oi as f64,
             (Value::Flt(sf), Value::Flt(of)) => {
                 if sf.is_finite() && of.is_finite() {
                     sf == of

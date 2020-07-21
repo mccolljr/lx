@@ -1,0 +1,30 @@
+---
+source: src/tests/mod.rs
+expression: output_str
+input_file: src/tests/testdata/equality.lx
+---
+1 == 1.0:             true
+1.0 == 1:             true
+1.1 == 1:             false
+1 == 1.1:             false
+'a' == 'a':           true
+'a' == 'b':           false
+'b' == 'a':           false
+'b' + 'a' == 'ba':    true
+true == true:         true
+false == false:       true
+test == test:         true
+test == alias_test:   true
+alias_test == test:   true
+test == test2:        false
+test2 == test:        false
+obj1 == obj1:         true
+obj1 == obj2:         true
+obj2 == obj1:         true
+arr1 == arr1:         true
+arr1 == arr2:         true
+arr2 == arr1:         true
+print == print:       true
+print == alias_print: true
+OK!
+
