@@ -1,0 +1,2 @@
+let { fib } = import('./src/tests/testdata/fib.lx');
+print('local fib(85):', fib(85));
