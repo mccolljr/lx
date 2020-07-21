@@ -116,7 +116,7 @@ impl VMState {
         if let Some(existing) = self.imports.borrow().get(&path) {
             return Ok(Value::Object(existing.clone()));
         }
-        let src = std::fs::read_to_string(path).expect("unable to import");
+        let src = std::fs::read_to_string(&path).expect("unable to import");
         let insts: Rc<[Inst]> =
             Rc::from(compile(src, self.root_scope.names())?);
         let import_scope =
@@ -130,6 +130,7 @@ impl VMState {
             let v = import_scope.get(&name);
             import.index_set(name, v);
         }
+        self.imports.borrow_mut().insert(path, import.clone());
         Ok(Value::from(import.clone()))
     }
 

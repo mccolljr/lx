@@ -48,6 +48,9 @@ impl PartialEq for Value {
             (Value::Bool(sb), Value::Bool(ob)) => sb == ob,
             (Value::Object(so), Value::Object(oo)) => so == oo,
             (Value::Array(sa), Value::Array(oa)) => sa == oa,
+            (Value::Func(sf), Value::Func(of)) => sf == of,
+            (Value::NativeFunc(sn), Value::NativeFunc(on)) => sn == on,
+            (Value::Iter(si), Value::Iter(oi)) => si == oi,
             _ => false,
         }
     }

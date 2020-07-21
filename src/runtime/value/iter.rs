@@ -24,6 +24,14 @@ impl Debug for Iter {
     }
 }
 
+impl PartialEq<Iter> for Iter {
+    fn eq(&self, other: &Iter) -> bool {
+        std::ptr::eq(self.next.as_ref(), other.next.as_ref())
+    }
+}
+
+impl Eq for Iter {}
+
 impl Iter {
     pub fn new(next: Rc<RefCell<dyn FnMut() -> Option<Value>>>) -> Self {
         Iter { next }

@@ -6,10 +6,14 @@ use std::process::{
 
 #[test]
 fn test_snapshots() {
+    assert!(Command::new("cargo")
+        .arg("build")
+        .status()
+        .unwrap()
+        .success());
     glob!("testdata/*.lx", |path| {
         println!("testing {:?}", path);
-        let mut child = Command::new("cargo")
-            .arg("run")
+        let mut child = Command::new("./target/debug/lx")
             .arg(path)
             .stdout(Stdio::piped())
             .spawn()
