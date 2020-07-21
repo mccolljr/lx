@@ -60,10 +60,13 @@ impl Object {
     }
 
     pub fn rust_iter(&self) -> impl Iterator<Item = (String, Value)> {
+        let mut keys: Vec<String> =
+            self.0.borrow().keys().map(|k| k.clone()).collect();
+        keys.sort();
         ObjectIter {
-            src:  self.clone(),
-            keys: self.0.borrow().keys().map(|k| k.clone()).collect(),
-            i:    0,
+            src: self.clone(),
+            keys,
+            i: 0,
         }
     }
 }
