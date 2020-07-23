@@ -1,17 +1,17 @@
 use super::iter::Iter;
 use super::value::Value;
 
-use std::cell::RefCell;
+use crate::mem::rccell::RcCell;
+
 use std::collections::HashMap;
 use std::fmt::{
     Debug,
     Formatter,
     Result as FmtResult,
 };
-use std::rc::Rc;
 
 #[derive(Clone, PartialEq)]
-pub struct Object(Rc<RefCell<HashMap<String, Value>>>);
+pub struct Object(RcCell<HashMap<String, Value>>);
 
 impl Debug for Object {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
@@ -20,13 +20,11 @@ impl Debug for Object {
 }
 
 impl From<HashMap<String, Value>> for Object {
-    fn from(src: HashMap<String, Value>) -> Self {
-        Self(Rc::new(RefCell::new(src)))
-    }
+    fn from(src: HashMap<String, Value>) -> Self { Self(RcCell::new(src)) }
 }
 
 impl Object {
-    pub fn new() -> Self { Object(Rc::new(RefCell::new(HashMap::new()))) }
+    pub fn new() -> Self { Self::from(HashMap::new()) }
 
     pub fn len(&self) -> usize { self.0.borrow().len() }
 
@@ -56,7 +54,7 @@ impl Object {
         let mut items = self
             .rust_iter()
             .map(|(k, v)| Value::from(&[Value::Str(k), v][..]));
-        Iter::new(Rc::new(RefCell::new(move || items.next())))
+        Iter::new(move || Ok(items.next()))
     }
 
     pub fn rust_iter(&self) -> impl Iterator<Item = (String, Value)> {

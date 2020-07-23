@@ -181,6 +181,7 @@ version = "0.1.0"
 dependencies = [
  "insta",
  "quick-error",
+ "regex",
 ]
 
 [[package]]

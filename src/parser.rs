@@ -533,15 +533,19 @@ impl Parser {
         let mut x: Expr = match self.peek_t.typ.prefix_binding_power() {
             Some((_, prefix_rbp)) => {
                 self.advance()?;
-                // if prefix_rbp < min_binding_power {
-                //     todo!()
-                // }
                 let op_pos = self.cur_t.pos;
                 let op_typ = self.cur_t.typ;
-                Expr::Unary {
-                    op_typ,
-                    op_pos,
-                    expr: Box::new(self.parse_expr(prefix_rbp)?),
+                if op_typ == TokenType::KwTypeof {
+                    Expr::Typeof {
+                        kwtypeof: op_pos,
+                        expr:     Box::new(self.parse_expr(prefix_rbp)?),
+                    }
+                } else {
+                    Expr::Unary {
+                        op_typ,
+                        op_pos,
+                        expr: Box::new(self.parse_expr(prefix_rbp)?),
+                    }
                 }
             }
             None => self.parse_primary_expr()?,
@@ -554,17 +558,8 @@ impl Parser {
                 break;
             }
             match self.peek_t.typ {
-                TokenType::OParen => {
-                    x = self.parse_call(x)?;
-                }
                 TokenType::Question => {
                     x = self.parse_ternary(x)?;
-                }
-                TokenType::OSquare => {
-                    x = self.parse_index(x)?;
-                }
-                TokenType::Dot => {
-                    x = self.parse_selector_expr(x)?;
                 }
                 _ => {
                     self.advance()?;
@@ -575,50 +570,50 @@ impl Parser {
                         rhs:    Box::new(self.parse_expr(infix_rbp)?),
                     };
                 }
-            }
+            };
         }
         Ok(x)
     }
 
     fn parse_primary_expr(&mut self) -> Result<Expr, SyntaxError> {
         self.advance()?;
-        match self.cur_t.typ {
+        let mut x = match self.cur_t.typ {
             TokenType::KwImport => {
-                Ok(Expr::Import {
+                Expr::Import {
                     kwimport: self.cur_t.pos,
                     oparen:   self.expect(TokenType::OParen)?.pos,
                     name:     self.expect(TokenType::LitString)?.lit,
                     cparen:   self.expect(TokenType::CParen)?.pos,
-                })
+                }
             }
             TokenType::KwNull => {
-                Ok(Expr::LitNull {
+                Expr::LitNull {
                     pos: self.cur_t.pos,
-                })
+                }
             }
             TokenType::LitInt => {
-                Ok(Expr::LitInt {
+                Expr::LitInt {
                     pos: self.cur_t.pos,
                     val: self.cur_t.lit.parse().expect("illegal int value"),
-                })
+                }
             }
             TokenType::LitFloat => {
-                Ok(Expr::LitFlt {
+                Expr::LitFlt {
                     pos: self.cur_t.pos,
                     val: self.cur_t.lit.parse().expect("illegal float value"),
-                })
+                }
             }
             TokenType::KwTrue | TokenType::KwFalse => {
-                Ok(Expr::LitBool {
+                Expr::LitBool {
                     pos: self.cur_t.pos,
                     val: self.cur_t.typ == TokenType::KwTrue,
-                })
+                }
             }
             TokenType::LitString => {
-                Ok(Expr::LitStr {
+                Expr::LitStr {
                     pos: self.cur_t.pos,
                     val: self.cur_t.lit.clone(),
-                })
+                }
             }
             TokenType::KwFn => {
                 self.open_scope();
@@ -645,41 +640,56 @@ impl Parser {
                     is_closure: self.scope_is_closure(),
                 };
                 self.close_scope();
-                Ok(expr)
+                expr
             }
             TokenType::Ident => {
                 let pos = self.cur_t.pos;
                 let name = self.cur_t.lit.clone();
                 self.scope_use(&name, pos)?;
-                Ok(Expr::Ident(Ident { pos, name }))
+                Expr::Ident(Ident { pos, name })
             }
             TokenType::OParen => {
-                Ok(Expr::Paren {
+                Expr::Paren {
                     oparen: self.cur_t.pos,
                     expr:   Box::new(self.parse_expr(0)?),
                     cparen: self.expect(TokenType::CParen)?.pos,
-                })
+                }
             }
             TokenType::OSquare => {
-                Ok(Expr::LitArr {
+                Expr::LitArr {
                     osquare:  self.cur_t.pos,
                     elements: self.parse_expr_list(vec![TokenType::CSquare])?,
                     csquare:  self.expect(TokenType::CSquare)?.pos,
-                })
+                }
             }
             TokenType::OBrace => {
-                Ok(Expr::LitObj {
+                Expr::LitObj {
                     obrace: self.cur_t.pos,
                     fields: self.parse_field_list()?,
                     cbrace: self.expect(TokenType::CBrace)?.pos,
-                })
+                }
             }
             _ => {
-                Err(SyntaxError::Expected {
+                return Err(SyntaxError::Expected {
                     at:     self.cur_t.pos,
                     wanted: "expression".into(),
                     found:  format!("{:?}", self.cur_t.typ),
                 })
+            }
+        };
+
+        loop {
+            match self.peek_t.typ {
+                TokenType::OParen => {
+                    x = self.parse_call(x)?;
+                }
+                TokenType::OSquare => {
+                    x = self.parse_index(x)?;
+                }
+                TokenType::Dot => {
+                    x = self.parse_selector_expr(x)?;
+                }
+                _ => return Ok(x),
             }
         }
     }
@@ -968,6 +978,31 @@ mod test {
         assert_expr_str!("-a().b().c + 1", "((-((((a()).b)()).c)) + 1)");
         assert_expr_str!("-a()[b().c] + 1", "((-((a())[((b()).c)])) + 1)");
         assert_expr_str!("-a[b().c] + 1", "((-(a[((b()).c)])) + 1)");
+
+        // TODO: categorize
+        assert_expr_str!("!true == false", "((!true) == false)");
+        assert_expr_str!("!1-1 == false", "(((!1) - 1) == false)");
+        assert_expr_str!("!-1 == false", "((!(-1)) == false)");
+        assert_expr_str!("-!1 == false", "((-(!1)) == false)");
+        assert_expr_str!("a ? b ? c : d : e", "(a ? (b ? c : d) : e)");
+        assert_expr_str!(
+            "a == a ? b == b ? c == c ? d : e : f : g",
+            "((a == a) ? ((b == b) ? ((c == c) ? d : e) : f) : g)"
+        );
+        assert_expr_str!("- typeof a", "(-(typeof a))");
+        assert_expr_str!("typeof a", "(typeof a)");
+        assert_expr_str!("typeof -a", "(typeof (-a))");
+        assert_expr_str!("typeof !a", "(typeof (!a))");
+        assert_expr_str!("typeof a+b", "(typeof (a + b))");
+        assert_expr_str!("typeof -a+b", "(typeof ((-a) + b))");
+        assert_expr_str!(
+            "- typeof a+b == 'int'",
+            "((-(typeof (a + b))) == \"int\")"
+        );
+        assert_expr_str!(
+            "typeof a+b == 'int'",
+            "((typeof (a + b)) == \"int\")"
+        );
     }
 
     #[test]

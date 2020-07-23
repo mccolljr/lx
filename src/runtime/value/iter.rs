@@ -1,45 +1,45 @@
 use super::value::Value;
 
-use std::cell::RefCell;
+use crate::error::Error;
+use crate::mem::rccell::RcCell;
+
 use std::fmt::{
     Debug,
     Formatter,
     Result as FmtResult,
 };
-use std::rc::Rc;
 
 #[derive(Clone)]
 pub struct Iter {
-    next: Rc<RefCell<dyn FnMut() -> Option<Value>>>,
+    next: RcCell<dyn FnMut() -> Result<Option<Value>, Error>>,
 }
 
 impl Debug for Iter {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
-        f.debug_struct("Iter")
-            .field(
-                "next",
-                &(&*self.next as *const RefCell<dyn FnMut() -> Option<Value>>),
-            )
-            .finish()
+        f.debug_struct("Iter").field("next", &self.next).finish()
     }
 }
 
 impl PartialEq<Iter> for Iter {
-    fn eq(&self, other: &Iter) -> bool {
-        std::ptr::eq(self.next.as_ref(), other.next.as_ref())
-    }
+    fn eq(&self, other: &Iter) -> bool { self.next.ptr_eq(&other.next) }
 }
 
 impl Eq for Iter {}
 
 impl Iter {
-    pub fn new(next: Rc<RefCell<dyn FnMut() -> Option<Value>>>) -> Self {
-        Iter { next }
+    pub fn new<F: FnMut() -> Result<Option<Value>, Error> + 'static>(
+        next: F,
+    ) -> Self {
+        Iter {
+            next: RcCell::new(next),
+        }
     }
 }
 
 impl Iterator for Iter {
     type Item = Value;
 
-    fn next(&mut self) -> Option<Value> { (self.next.borrow_mut())() }
+    fn next(&mut self) -> Option<Value> {
+        (self.next.borrow_mut())().map_or(None, |opt| opt)
+    }
 }

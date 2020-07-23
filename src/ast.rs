@@ -486,6 +486,10 @@ pub enum Expr {
         name:     String,
         cparen:   Pos,
     },
+    Typeof {
+        kwtypeof: Pos,
+        expr:     Box<Expr>,
+    },
 }
 
 impl Display for Expr {
@@ -578,6 +582,9 @@ impl Display for Expr {
             Expr::Import { name, .. } => {
                 write!(f, "import({:?})", name)?;
             }
+            Expr::Typeof { expr, .. } => {
+                write!(f, "(typeof {})", expr)?;
+            }
         }
         Ok(())
     }
@@ -652,6 +659,12 @@ impl Node for Expr {
             } => {
                 let start = kwimport.offset;
                 let end = cparen.offset + cparen.length;
+                Pos::span(start, end - start)
+            }
+            Expr::Typeof { kwtypeof, expr } => {
+                let start = kwtypeof.offset;
+                let endpos = expr.pos();
+                let end = endpos.offset + endpos.length;
                 Pos::span(start, end - start)
             }
         }

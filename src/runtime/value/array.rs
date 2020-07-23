@@ -1,7 +1,8 @@
 use super::iter::Iter;
 use super::value::Value;
 
-use std::cell::RefCell;
+use crate::mem::rccell::RcCell;
+
 use std::collections::VecDeque;
 use std::fmt::{
     Debug,
@@ -9,10 +10,9 @@ use std::fmt::{
     Result as FmtResult,
 };
 use std::iter::FromIterator;
-use std::rc::Rc;
 
 #[derive(Clone, PartialEq)]
-pub struct Array(Rc<RefCell<VecDeque<Value>>>);
+pub struct Array(RcCell<VecDeque<Value>>);
 
 impl Debug for Array {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
@@ -21,19 +21,19 @@ impl Debug for Array {
 }
 
 impl From<VecDeque<Value>> for Array {
-    fn from(src: VecDeque<Value>) -> Self { Self(Rc::new(RefCell::new(src))) }
+    fn from(src: VecDeque<Value>) -> Self { Self(RcCell::new(src)) }
 }
 
 impl From<&[Value]> for Array {
     fn from(src: &[Value]) -> Self {
-        Self(Rc::new(RefCell::new(VecDeque::from_iter(
+        Self(RcCell::new(VecDeque::from_iter(
             src.iter().map(|v| v.clone()),
-        ))))
+        )))
     }
 }
 
 impl Array {
-    pub fn new() -> Self { Array(Rc::new(RefCell::new(VecDeque::new()))) }
+    pub fn new() -> Self { Array::from(VecDeque::new()) }
 
     pub fn len(&self) -> usize { self.0.borrow().len() }
 
@@ -56,26 +56,26 @@ impl Array {
     }
 
     pub fn concat(&self, other: &Self) -> Self {
-        return Array(Rc::new(RefCell::new(VecDeque::from_iter(
+        return Array::from(VecDeque::from_iter(
             self.0
                 .borrow()
                 .iter()
                 .chain(other.0.borrow().iter())
                 .map(Clone::clone),
-        ))));
+        ));
     }
 
     pub fn value_iter(&self) -> Iter {
         let size = self.len();
         let src = self.clone();
         let mut i: usize = 0;
-        Iter::new(Rc::new(RefCell::new(move || {
+        Iter::new(move || {
             if i >= size {
-                return None;
+                return Ok(None);
             }
             let next_val = src.index_get(i);
             i += 1;
-            Some(next_val)
-        })))
+            Ok(Some(next_val))
+        })
     }
 }

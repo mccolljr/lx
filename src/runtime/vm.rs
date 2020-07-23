@@ -153,8 +153,11 @@ impl VMState {
             }
             match insts[ip].clone() {
                 Inst::Illegal => panic!(Panic::IllegalInstruction),
-                Inst::Import(name) => {
+                Inst::SysImport(name) => {
                     self.push_stack(self.import(name)?);
+                }
+                Inst::SysTypeof => {
+                    self.push_stack(Value::from(self.pop_stack().type_of()));
                 }
                 Inst::StackPop => {
                     self.pop_stack();

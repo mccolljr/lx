@@ -81,6 +81,9 @@ fn const_val(x: &Expr) -> Option<Value> {
                 .op_index(&const_val(index.as_ref())?)
                 .map_or(None, |v| Some(v))
         }
+        Expr::Typeof { expr, .. } => {
+            const_val(expr.as_ref()).map(|v| Value::from(v.type_of()))
+        }
         Expr::Paren { expr, .. } => const_val(expr.as_ref()),
         Expr::Call { .. } => None,
         Expr::Ident { .. } => None,
@@ -262,6 +265,10 @@ pub fn simplify_expr(x: Expr) -> Expr {
                 args: args.into_iter().map(simplify_expr).collect(),
                 cparen,
             }
+        }
+        Expr::Typeof { kwtypeof, mut expr } => {
+            *expr = simplify_expr(*expr);
+            Expr::Typeof { kwtypeof, expr }
         }
     }
 }

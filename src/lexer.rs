@@ -271,6 +271,7 @@ impl Lexer {
                 "in" => KwIn,
                 "yield" => KwYield,
                 "import" => KwImport,
+                "typeof" => KwTypeof,
                 _ => Ident,
             },
             lit,

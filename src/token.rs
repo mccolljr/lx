@@ -78,6 +78,7 @@ pub enum TokenType {
     KwIn,
     KwYield,
     KwImport,
+    KwTypeof,
 
     Comment,
 }
@@ -131,6 +132,7 @@ impl Display for TokenType {
             KwIn => write!(f, "in"),
             KwYield => write!(f, "yield"),
             KwImport => write!(f, "import"),
+            KwTypeof => write!(f, "typeof"),
             Comment => write!(f, "comment"),
         }
     }
@@ -147,7 +149,6 @@ impl TokenType {
             OpAdd | OpSub               => Some((49, 50)),
             OpDiv | OpRem               => Some((59, 60)),
             OpMul                       => Some((69, 70)),
-            OSquare | Dot | OParen      => Some((89, 90)),
             _ => None,
         };
     }
@@ -156,7 +157,8 @@ impl TokenType {
         use TokenType::*;
         #[rustfmt::skip]
         return match self {
-            OpSub | Bang  => Some(((), 82)),
+            KwTypeof      => Some(((), 31)),
+            OpSub | Bang  => Some(((), 71)),
             _ => None,
         };
     }

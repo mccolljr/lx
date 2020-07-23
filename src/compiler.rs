@@ -229,7 +229,11 @@ fn compile_expr(insts: &mut Vec<Inst>, expr: Expr) {
             insts.push(Inst::OperationIndexGet);
         }
         Expr::Import { name, .. } => {
-            insts.push(Inst::Import(name));
+            insts.push(Inst::SysImport(name));
+        }
+        Expr::Typeof { expr, .. } => {
+            compile_expr(insts, *expr);
+            insts.push(Inst::SysTypeof);
         }
     }
 }

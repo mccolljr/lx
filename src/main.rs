@@ -1,11 +1,15 @@
+#![feature(unsize, coerce_unsized)]
+
 #[macro_use]
 extern crate quick_error;
+extern crate regex;
 
 mod ast;
 mod ast_rewrite;
 mod compiler;
 mod error;
 mod lexer;
+mod mem;
 mod parser;
 mod runtime;
 mod source;

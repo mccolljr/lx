@@ -1,10 +1,1 @@
-let { greetings } = import('./testdata/third.lx');
-let { greet } = import('./testdata/other.lx');
-
-for item in greetings {
-     let [ lang, _ ] = item;
-     greet(lang, 'Jake');
-     greet(lang, 'John');
-     greet(lang, 'Mike');
-     greet(lang, 'Dave');
-}
+print(typeof 3);
