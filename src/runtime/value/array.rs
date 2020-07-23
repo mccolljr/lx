@@ -42,10 +42,7 @@ impl Array {
     pub fn push_front(&self, val: Value) { self.0.borrow_mut().push_front(val) }
 
     pub fn index_get(&self, index: usize) -> Value {
-        self.0
-            .borrow()
-            .get(index)
-            .map_or(Value::Null, |v| v.clone())
+        self.0.borrow().get(index).map_or(Value::Null, Clone::clone)
     }
 
     pub fn index_set(&self, index: usize, val: Value) {
@@ -64,7 +61,7 @@ impl Array {
                 .borrow()
                 .iter()
                 .chain(other.0.borrow().iter())
-                .map(|v| v.clone()),
+                .map(Clone::clone),
         ))));
     }
 

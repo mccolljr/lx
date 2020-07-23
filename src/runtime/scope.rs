@@ -17,11 +17,14 @@ pub struct Scope {
 
 impl Display for Scope {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
-        let mut mapstruct = f.debug_map();
-        for (k, v) in self.entries.borrow().iter() {
-            mapstruct.entry(k, &v.to_string());
-        }
-        mapstruct.finish()
+        f.debug_map()
+            .entries(
+                self.entries
+                    .borrow()
+                    .iter()
+                    .map(|(k, v)| return (k, v.to_string())),
+            )
+            .finish()
     }
 }
 

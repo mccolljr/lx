@@ -13,6 +13,7 @@ use crate::error::{
 use crate::token::TokenType;
 
 use std::convert::TryFrom;
+use std::fmt::Debug;
 
 #[derive(Clone, Debug)]
 pub enum Value {
@@ -71,7 +72,24 @@ impl From<i64> for Value {
 }
 
 impl From<f64> for Value {
-    fn from(src: f64) -> Self { Value::Flt(src) }
+    fn from(src: f64) -> Value {
+        if src.is_nan() {
+            // normalize NaN values
+            Value::Flt(f64::NAN)
+        } else if src.is_infinite() && src.is_sign_negative() {
+            // normalize infinite negative values
+            Value::Flt(f64::NEG_INFINITY)
+        } else if src.is_infinite() {
+            // normalize infinite values
+            Value::Flt(f64::INFINITY)
+        } else if src == 0.0 {
+            // normalize -0.0 and 0.0
+            Value::Flt(0.0)
+        } else {
+            // all
+            Value::Flt(src)
+        }
+    }
 }
 
 impl From<bool> for Value {
@@ -111,8 +129,8 @@ impl TryFrom<Value> for i64 {
             Value::Flt(v) => Ok(v as i64),
             _ => {
                 Err(RuntimeError::InvalidType(format!(
-                    "cannot convert {:?} to an integer",
-                    value
+                    "cannot convert {} to an integer",
+                    value.type_of()
                 ))
                 .into())
             }
@@ -129,8 +147,8 @@ impl TryFrom<Value> for f64 {
             Value::Flt(v) => Ok(v),
             _ => {
                 Err(RuntimeError::InvalidType(format!(
-                    "cannot convert {:?} to a float",
-                    value
+                    "cannot convert {} to a float",
+                    value.type_of()
                 ))
                 .into())
             }
@@ -146,8 +164,8 @@ impl TryFrom<Value> for bool {
             Value::Bool(v) => Ok(v),
             _ => {
                 Err(RuntimeError::InvalidType(format!(
-                    "cannot convert {:?} to a bool",
-                    value
+                    "cannot convert {} to a bool",
+                    value.type_of()
                 ))
                 .into())
             }
@@ -163,8 +181,8 @@ impl TryFrom<Value> for String {
             Value::Str(v) => Ok(v),
             _ => {
                 Err(RuntimeError::InvalidType(format!(
-                    "cannot convert {:?} to a string",
-                    value
+                    "cannot convert {} to a string",
+                    value.type_of()
                 ))
                 .into())
             }
@@ -181,8 +199,9 @@ impl Value {
             (Object(obj), key) => Ok(obj.index_get(&key.to_string())),
             _ => {
                 Err(RuntimeError::InvalidOperation(format!(
-                    "can't index {:?} with {:?}",
-                    self, index
+                    "can't index {} with {}",
+                    self.type_of(),
+                    index.type_of()
                 ))
                 .into())
             }
@@ -212,8 +231,9 @@ impl Value {
             }
             _ => {
                 Err(RuntimeError::InvalidOperation(format!(
-                    "can't index {:?} with {:?}",
-                    self, index
+                    "can't index {} with {}",
+                    self.type_of(),
+                    index.type_of()
                 ))
                 .into())
             }
@@ -243,8 +263,9 @@ impl Value {
             }
             _ => {
                 Err(RuntimeError::InvalidOperation(format!(
-                    "can't add {:?} to {:?}",
-                    rhs, self
+                    "can't add {} to {}",
+                    rhs.type_of(),
+                    self.type_of(),
                 ))
                 .into())
             }
@@ -272,8 +293,9 @@ impl Value {
             }
             _ => {
                 Err(RuntimeError::InvalidOperation(format!(
-                    "can't subtract {:?} from {:?}",
-                    rhs, self
+                    "can't subtract {} from {}",
+                    rhs.type_of(),
+                    self.type_of(),
                 ))
                 .into())
             }
@@ -301,8 +323,9 @@ impl Value {
             }
             _ => {
                 Err(RuntimeError::InvalidOperation(format!(
-                    "can't multiply {:?} by {:?}",
-                    self, rhs
+                    "can't multiply {} by {}",
+                    self.type_of(),
+                    rhs.type_of(),
                 ))
                 .into())
             }
@@ -336,8 +359,9 @@ impl Value {
             }
             _ => {
                 Err(RuntimeError::InvalidOperation(format!(
-                    "can't divide {:?} by {:?}",
-                    self, rhs
+                    "can't divide {} by {}",
+                    self.type_of(),
+                    rhs.type_of(),
                 ))
                 .into())
             }
@@ -356,8 +380,9 @@ impl Value {
             }
             _ => {
                 Err(RuntimeError::InvalidOperation(format!(
-                    "can't divide {:?} by {:?} for a remainder",
-                    self, rhs
+                    "can't divide {} by {} for remainder",
+                    self.type_of(),
+                    rhs.type_of(),
                 ))
                 .into())
             }
@@ -396,8 +421,9 @@ impl Value {
             }
             _ => {
                 Err(RuntimeError::InvalidOperation(format!(
-                    "can't compare {:?} to {:?} (>)",
-                    self, rhs,
+                    "can't compare {} to {} (>)",
+                    self.type_of(),
+                    rhs.type_of(),
                 ))
                 .into())
             }
@@ -416,8 +442,9 @@ impl Value {
             }
             _ => {
                 Err(RuntimeError::InvalidOperation(format!(
-                    "can't compare {:?} to {:?} (<)",
-                    self, rhs,
+                    "can't compare {} to {} (<)",
+                    self.type_of(),
+                    rhs.type_of(),
                 ))
                 .into())
             }
@@ -436,8 +463,9 @@ impl Value {
             }
             _ => {
                 Err(RuntimeError::InvalidOperation(format!(
-                    "can't compare {:?} to {:?} (>=)",
-                    self, rhs,
+                    "can't compare {} to {} (>=)",
+                    self.type_of(),
+                    rhs.type_of(),
                 ))
                 .into())
             }
@@ -456,8 +484,9 @@ impl Value {
             }
             _ => {
                 Err(RuntimeError::InvalidOperation(format!(
-                    "can't compare {:?} to {:?} (<=)",
-                    self, rhs,
+                    "can't compare {} to {} (<=)",
+                    self.type_of(),
+                    rhs.type_of(),
                 ))
                 .into())
             }
@@ -474,8 +503,8 @@ impl Value {
             }
             _ => {
                 Err(RuntimeError::InvalidOperation(format!(
-                    "can't make {:?} negative",
-                    self,
+                    "can't make {} negative",
+                    self.type_of(),
                 ))
                 .into())
             }
@@ -495,8 +524,8 @@ impl Value {
             Iter(v) => Ok(v.clone()),
             _ => {
                 Err(RuntimeError::InvalidOperation(format!(
-                    "can't iterate over {:?}",
-                    self,
+                    "can't iterate over {}",
+                    self.type_of()
                 ))
                 .into())
             }
@@ -520,16 +549,17 @@ impl Value {
     }
 
     pub fn call(&self, args: Vec<Value>) -> Result<Value, Error> {
+        use Value::*;
         match self {
-            Value::Func(f) => f.call(args),
-            Value::NativeFunc(f) => f.call(args),
-            Value::Object(o) if o.has_method(&"__call__".into()) => {
+            Func(f) => f.call(args),
+            NativeFunc(f) => f.call(args),
+            Object(o) if o.has_method(&"__call__".into()) => {
                 o.index_get(&"__call__".into()).call(args)
             }
             _ => {
                 return Err(RuntimeError::InvalidOperation(format!(
-                    "can't call {:?}",
-                    self
+                    "can't call {}",
+                    self.type_of()
                 ))
                 .into());
             }

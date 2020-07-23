@@ -1,6 +1,7 @@
 use crate::source::Pos;
 use crate::token::TokenType;
 
+// use std::collections::HashMap;
 use std::fmt::{
     Display,
     Formatter,
@@ -149,6 +150,32 @@ impl Display for ObjDestructItem {
         }
     }
 }
+
+// #[derive(Debug, Clone, PartialEq)]
+// pub enum Type {
+//     Any {
+//         pos: Pos,
+//     },
+//     Named {
+//         name: String,
+//         pos:  Pos,
+//     },
+//     Object {
+//         obrace:   Pos,
+//         elements: HashMap<String, Type>,
+//         cbrace:   Pos,
+//     },
+//     Map {
+//         obrace:  Pos,
+//         element: Box<Type>,
+//         cbrace:  Pos,
+//     },
+//     Tuple {
+//         osquare:  Pos,
+//         elements: Vec<Type>,
+//         csquare:  Pos,
+//     },
+// }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
