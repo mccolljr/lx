@@ -1,4 +1,0 @@
-let greetings = {
-    'EN': "Hello",
-    'JP': 'Konichiwa'
-};

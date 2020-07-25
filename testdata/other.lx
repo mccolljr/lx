@@ -1,5 +1,0 @@
-let { greetings } = import('./testdata/third.lx');
-
-fn greet(lang, name) {
-    print(greetings[lang], name);
-}

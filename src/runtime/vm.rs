@@ -499,7 +499,7 @@ impl VMState {
             if let FrameStatus::Excepted(err) = result {
                 let (catch_name, catch_insts) = catch.unwrap();
                 let scope = Rc::new(Scope::extend(Rc::clone(&scope)));
-                scope.declare(catch_name, Value::from(format!("{:?}", err)));
+                scope.declare(catch_name, Value::from(format!("{}", err)));
                 result = self.run_frame(catch_insts, scope, 0, None, None);
             }
         }
