@@ -1,10 +1,13 @@
 use crate::ast::ObjDestructItem;
+use crate::runtime::frame::{
+    CatchContext,
+    FinallyContext,
+};
 use crate::runtime::value::Value;
 use crate::token::TokenType;
-
 use std::rc::Rc;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum Inst {
     Illegal,
     SysImport(String),
@@ -44,10 +47,9 @@ pub enum Inst {
         on_break: usize,
     },
     RunTryFrame {
-        insts:      Rc<[Inst]>,
-        name:       Option<String>,
-        on_catch:   Option<Rc<[Inst]>>,
-        on_finally: Option<Rc<[Inst]>>,
+        insts:   Rc<[Inst]>,
+        catch:   Option<CatchContext>,
+        finally: Option<FinallyContext>,
     },
     CallBegin,
     CallAppend,

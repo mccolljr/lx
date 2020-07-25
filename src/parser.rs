@@ -1071,8 +1071,9 @@ mod test {
             "((typeof (a + b)) == \"int\")"
         );
         assert_expr_str!(
-            "typeof a[b](c).d + e == typeof f(g).h[i]",
-            "((typeof ((((a[b])(c)).d) + e)) == (typeof (((f(g)).h)[i])))"
+            "typeof a[b](c).d + e == typeof !q + f(g).h[i]",
+            "((typeof ((((a[b])(c)).d) + e)) == (typeof ((!q) + \
+             (((f(g)).h)[i]))))"
         );
     }
 

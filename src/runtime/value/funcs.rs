@@ -5,12 +5,13 @@ use crate::error::{
     Panic,
     RuntimeError,
 };
+use crate::runtime::frame::{
+    Frame,
+    FrameStatus,
+};
 use crate::runtime::inst::Inst;
 use crate::runtime::scope::Scope;
-use crate::runtime::vm::{
-    FrameStatus,
-    VMState,
-};
+use crate::runtime::vm::VMState;
 
 use std::fmt::{
     Debug,
@@ -97,10 +98,10 @@ impl Func {
         }
         match self
             .vm
-            .run_frame(Rc::clone(&self.insts), scope, 0, None, None)
+            .run_frame(Frame::new(Rc::clone(&self.insts), scope, 0))
         {
-            FrameStatus::Returned(v) => Ok(v),
             FrameStatus::Ended => Ok(Value::Null),
+            FrameStatus::Returned(v) => Ok(v),
             FrameStatus::Excepted(err) => Err(err),
             _ => panic!(Panic::IllegalFuncFrameStatus),
         }

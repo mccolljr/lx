@@ -9,6 +9,10 @@ use crate::ast::{
 use crate::ast_rewrite::simplify_expr;
 use crate::error::Error;
 use crate::parser::Parser;
+use crate::runtime::frame::{
+    CatchContext,
+    FinallyContext,
+};
 use crate::runtime::inst::Inst;
 use crate::runtime::value::Value;
 use crate::source::Code;
@@ -140,34 +144,30 @@ fn compile_stmt(insts: &mut Vec<Inst>, stmt: Stmt) {
             for stmt in body.body {
                 compile_stmt(&mut try_insts, stmt);
             }
-            let mut catch_insts = Vec::<Inst>::new();
-            let name = catch.as_ref().map(|v| v.name.name.clone());
-            if catch.is_some() {
+            let catch_ctx = if catch.is_some() {
                 let c = catch.unwrap();
+                let mut catch_insts = Vec::<Inst>::new();
                 for stmt in c.body {
                     compile_stmt(&mut catch_insts, stmt);
                 }
-            }
-            let mut finally_insts = Vec::<Inst>::new();
-            if finally.is_some() {
+                Some(CatchContext(c.name.name, Rc::from(catch_insts)))
+            } else {
+                None
+            };
+            let finally_context = if finally.is_some() {
                 let f = finally.unwrap();
+                let mut finally_insts = Vec::<Inst>::new();
                 for stmt in f.body {
                     compile_stmt(&mut finally_insts, stmt);
                 }
-            }
+                Some(FinallyContext(Rc::from(finally_insts)))
+            } else {
+                None
+            };
             insts.push(Inst::RunTryFrame {
-                insts: Rc::from(try_insts),
-                name,
-                on_catch: if catch_insts.len() > 0 {
-                    Some(Rc::from(catch_insts))
-                } else {
-                    None
-                },
-                on_finally: if finally_insts.len() > 0 {
-                    Some(Rc::from(finally_insts))
-                } else {
-                    None
-                },
+                insts:   Rc::from(try_insts),
+                catch:   catch_ctx,
+                finally: finally_context,
             })
         }
     }
