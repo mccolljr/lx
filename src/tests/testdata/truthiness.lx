@@ -1,0 +1,17 @@
+print('null is truthy?       ', !!null);
+print('true is truthy?       ', !!true);
+print('false is truthy?      ', !!false);
+print('1 is truthy?          ', !!1);
+print('0 is truthy?          ', !!0);
+print('1.0 is truthy?        ', !!1.0);
+print('0.0 is truthy?        ', !!0.0);
+print('"a" is truthy?        ', !!"a");
+print('"" is truthy?         ', !!"");
+print('[1] is truthy?        ', !![1]);
+print('[] is truthy?         ', !![]);
+print('{a: 1} is truthy?     ', !!{a:1});
+print('{} is truthy?         ', !!{});
+print('(fn(){}) is truthy?   ', !!(fn(){}));
+print('(print) is truthy?    ', !!(print));
+print('empty iter is truthy? ', !!range(0,0));  // yes, because it is an object
+print('iter is truthy?       ', !!range(0,10)); // yes, because it is an object
