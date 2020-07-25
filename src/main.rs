@@ -1,4 +1,4 @@
-#![feature(unsize, coerce_unsized)]
+#![feature(unsize, coerce_unsized, try_trait)]
 
 #[macro_use]
 extern crate quick_error;

@@ -1,7 +1,7 @@
 use crate::source::Pos;
 
 quick_error! {
-    #[derive(Debug)]
+    #[derive(Debug, Clone)]
     pub enum SyntaxError {
         InvalidCharacter{at: Pos, ch: char} {
             display("at {:?}: invalid character '{}'", at, ch)
@@ -37,7 +37,7 @@ quick_error! {
 }
 
 quick_error! {
-    #[derive(Debug)]
+    #[derive(Debug, Clone)]
     pub enum RuntimeError {
         InvalidOperation(reason: String) {
             display("invalid operation: {}", reason)
@@ -55,7 +55,7 @@ quick_error! {
 }
 
 quick_error! {
-    #[derive(Debug)]
+    #[derive(Debug, Clone)]
     pub enum Panic {
         StackUnderflow {
             display("PANIC: STACK UNDERFLOW")
@@ -76,7 +76,7 @@ quick_error! {
 }
 
 quick_error! {
-    #[derive(Debug)]
+    #[derive(Debug, Clone)]
     pub enum Error {
         Syntax(err: SyntaxError) {
             from(src: SyntaxError) -> (src)

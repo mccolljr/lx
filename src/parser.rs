@@ -1,6 +1,8 @@
 use crate::ast::{
+    CatchBlock,
     ElseBlock,
     Expr,
+    FinallyBlock,
     FnArg,
     Ident,
     IfBlock,
@@ -10,6 +12,7 @@ use crate::ast::{
     ObjField,
     ObjKey,
     Stmt,
+    TryBlock,
 };
 use crate::error::SyntaxError;
 use crate::lexer::Lexer;
@@ -208,6 +211,7 @@ impl Parser {
                 }
             }
             TokenType::KwThrow => self.parse_throw_stmt(),
+            TokenType::KwTry => self.parse_try_stmt(),
             _ => self.parse_expr_or_assignment_stmt(),
         }
     }
@@ -463,30 +467,93 @@ impl Parser {
     }
 
     fn parse_return_stmt(&mut self) -> Result<Stmt, SyntaxError> {
-        let kwreturn = self.expect(TokenType::KwReturn)?.pos;
         Ok(Stmt::Return {
-            kwreturn,
-            expr: Box::new(self.parse_expr(0)?),
-            semi: self.expect(TokenType::Semi)?.pos,
+            kwreturn: self.expect(TokenType::KwReturn)?.pos,
+            expr:     Box::new(self.parse_expr(0)?),
+            semi:     self.expect(TokenType::Semi)?.pos,
         })
     }
 
     fn parse_yield_stmt(&mut self) -> Result<Stmt, SyntaxError> {
-        let kwyield = self.expect(TokenType::KwYield)?.pos;
         Ok(Stmt::Yield {
-            kwyield,
-            expr: Box::new(self.parse_expr(0)?),
-            semi: self.expect(TokenType::Semi)?.pos,
+            kwyield: self.expect(TokenType::KwYield)?.pos,
+            expr:    Box::new(self.parse_expr(0)?),
+            semi:    self.expect(TokenType::Semi)?.pos,
         })
     }
 
     fn parse_throw_stmt(&mut self) -> Result<Stmt, SyntaxError> {
-        let kwthrow = self.expect(TokenType::KwThrow)?.pos;
         Ok(Stmt::Throw {
-            kwthrow,
-            error: Box::new(self.parse_expr(0)?),
-            semi: self.expect(TokenType::Semi)?.pos,
+            kwthrow: self.expect(TokenType::KwThrow)?.pos,
+            error:   Box::new(self.parse_expr(0)?),
+            semi:    self.expect(TokenType::Semi)?.pos,
         })
+    }
+
+    fn parse_try_stmt(&mut self) -> Result<Stmt, SyntaxError> {
+        let body: TryBlock = self.parse_try_block()?;
+        let mut catch: Option<CatchBlock> = None;
+        if self.peek_t.typ == TokenType::KwCatch {
+            catch = Some(self.parse_catch_block()?);
+        }
+        let mut finally: Option<FinallyBlock> = None;
+        if self.peek_t.typ == TokenType::KwFinally {
+            finally = Some(self.parse_finally_block()?);
+        }
+        if catch.is_none() && finally.is_none() {
+            return Err(SyntaxError::Expected {
+                at:     self.peek_t.pos,
+                wanted: "catch or finally".into(),
+                found:  format!("{:?}", self.peek_t.typ),
+            });
+        }
+        Ok(Stmt::Try {
+            body,
+            catch,
+            finally,
+        })
+    }
+
+    fn parse_try_block(&mut self) -> Result<TryBlock, SyntaxError> {
+        self.open_scope();
+        let try_block = TryBlock {
+            kwtry:  self.expect(TokenType::KwTry)?.pos,
+            obrace: self.expect(TokenType::OBrace)?.pos,
+            body:   self.parse_stmt_list(&[TokenType::CBrace])?,
+            cbrace: self.expect(TokenType::CBrace)?.pos,
+        };
+        self.close_scope();
+        Ok(try_block)
+    }
+
+    fn parse_catch_block(&mut self) -> Result<CatchBlock, SyntaxError> {
+        self.open_scope();
+        let kwcatch = self.expect(TokenType::KwCatch)?.pos;
+        let name = self.parse_ident()?;
+        self.scope_declare(name.name.clone(), self.peek_t.pos)?;
+        let obrace = self.expect(TokenType::OBrace)?.pos;
+        let body = self.parse_stmt_list(&[TokenType::CBrace])?;
+        let cbrace = self.expect(TokenType::CBrace)?.pos;
+        self.close_scope();
+        Ok(CatchBlock {
+            kwcatch,
+            name,
+            obrace,
+            body,
+            cbrace,
+        })
+    }
+
+    fn parse_finally_block(&mut self) -> Result<FinallyBlock, SyntaxError> {
+        self.open_scope();
+        let finally_block = FinallyBlock {
+            kwfinally: self.expect(TokenType::KwFinally)?.pos,
+            obrace:    self.expect(TokenType::OBrace)?.pos,
+            body:      self.parse_stmt_list(&[TokenType::CBrace])?,
+            cbrace:    self.expect(TokenType::CBrace)?.pos,
+        };
+        self.close_scope();
+        Ok(finally_block)
     }
 
     fn parse_expr_or_assignment_stmt(&mut self) -> Result<Stmt, SyntaxError> {
@@ -1002,6 +1069,10 @@ mod test {
         assert_expr_str!(
             "typeof a+b == 'int'",
             "((typeof (a + b)) == \"int\")"
+        );
+        assert_expr_str!(
+            "typeof a[b](c).d + e == typeof f(g).h[i]",
+            "((typeof ((((a[b])(c)).d) + e)) == (typeof (((f(g)).h)[i])))"
         );
     }
 

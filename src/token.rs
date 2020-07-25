@@ -79,6 +79,9 @@ pub enum TokenType {
     KwYield,
     KwImport,
     KwTypeof,
+    KwTry,
+    KwCatch,
+    KwFinally,
 
     Comment,
 }
@@ -133,6 +136,9 @@ impl Display for TokenType {
             KwYield => write!(f, "yield"),
             KwImport => write!(f, "import"),
             KwTypeof => write!(f, "typeof"),
+            KwTry => write!(f, "try"),
+            KwCatch => write!(f, "catch"),
+            KwFinally => write!(f, "finally"),
             Comment => write!(f, "comment"),
         }
     }

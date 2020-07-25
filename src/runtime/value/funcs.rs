@@ -8,7 +8,6 @@ use crate::error::{
 use crate::runtime::inst::Inst;
 use crate::runtime::scope::Scope;
 use crate::runtime::vm::{
-    FrameOutput,
     FrameStatus,
     VMState,
 };
@@ -96,13 +95,13 @@ impl Func {
         for (i, arg) in args.into_iter().enumerate() {
             scope.declare(self.args[i].clone(), arg);
         }
-        match self.vm.run_frame(Rc::clone(&self.insts), scope, 0)? {
-            FrameOutput { status, retval }
-                if [FrameStatus::Returned, FrameStatus::Ended]
-                    .contains(&status) =>
-            {
-                Ok(retval.map_or(Value::Null, |v| v))
-            }
+        match self
+            .vm
+            .run_frame(Rc::clone(&self.insts), scope, 0, None, None)
+        {
+            FrameStatus::Returned(v) => Ok(v),
+            FrameStatus::Ended => Ok(Value::Null),
+            FrameStatus::Excepted(err) => Err(err),
             _ => panic!(Panic::IllegalFuncFrameStatus),
         }
     }

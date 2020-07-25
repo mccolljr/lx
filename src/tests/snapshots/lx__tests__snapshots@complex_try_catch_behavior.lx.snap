@@ -1,0 +1,23 @@
+---
+source: src/tests/mod.rs
+expression: output_str
+input_file: src/tests/testdata/complex_try_catch_behavior.lx
+---
+i: 0
+i: 1
+i: 2
+i: 3
+i: 4
+caught: Runtime(Generic("err: i: 5"))
+finally: j: 1
+i: 0
+i: 1
+i: 2
+i: 3
+i: 4
+caught: Runtime(Generic("err: i: 5"))
+finally: j: 2
+caught outer: Runtime(Generic("err: j: 3"))
+do_stuff(): WILL see (finally)
+OK!
+

@@ -24,8 +24,8 @@ fn do_stuff() {
             }
         })();
         return "WILL NOT see (try)";
-    } catch err {
-        printf("caught outer: {}", err);
+    } catch err2 {
+        printf("caught outer: {}", err2);
         return "WILL NOT see (catch)";
     } finally {
         return "WILL see (finally)";

@@ -41,6 +41,30 @@ pub struct ElseBlock {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct TryBlock {
+    pub kwtry:  Pos,
+    pub obrace: Pos,
+    pub body:   Vec<Stmt>,
+    pub cbrace: Pos,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CatchBlock {
+    pub kwcatch: Pos,
+    pub name:    Ident,
+    pub obrace:  Pos,
+    pub body:    Vec<Stmt>,
+    pub cbrace:  Pos,
+}
+#[derive(Debug, Clone, PartialEq)]
+pub struct FinallyBlock {
+    pub kwfinally: Pos,
+    pub obrace:    Pos,
+    pub body:      Vec<Stmt>,
+    pub cbrace:    Pos,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct FnArg {
     pub pos:  Pos,
     pub name: String,
@@ -248,6 +272,11 @@ pub enum Stmt {
         kwbreak: Pos,
         semi:    Pos,
     },
+    Try {
+        body:    TryBlock,
+        catch:   Option<CatchBlock>,
+        finally: Option<FinallyBlock>,
+    },
 }
 
 impl Display for Stmt {
@@ -320,6 +349,31 @@ impl Display for Stmt {
             Stmt::Yield { expr, .. } => write!(f, "yield {};", expr),
             Stmt::Throw { error, .. } => write!(f, "throw {};", error),
             Stmt::Break { .. } => write!(f, "break;"),
+            Stmt::Try {
+                body,
+                catch,
+                finally,
+            } => {
+                write!(f, "try {{")?;
+                for stmt in body.body.iter() {
+                    write!(f, "\n\t{}", stmt)?;
+                }
+                if catch.is_some() {
+                    let c = catch.as_ref().unwrap();
+                    write!(f, "}} catch {} {{", c.name)?;
+                    for stmt in c.body.iter() {
+                        write!(f, "\n\t{}", stmt)?;
+                    }
+                }
+                if finally.is_some() {
+                    let fin = finally.as_ref().unwrap();
+                    write!(f, "}} finally {{")?;
+                    for stmt in fin.body.iter() {
+                        write!(f, "\n\t{}", stmt)?;
+                    }
+                }
+                write!(f, "}}")
+            }
         }
     }
 }
@@ -392,6 +446,20 @@ impl Node for Stmt {
             Stmt::Break { kwbreak, semi } => {
                 let start = kwbreak.offset;
                 let end = semi.offset + semi.length;
+                Pos::span(start, end - start)
+            }
+            Stmt::Try {
+                body,
+                catch,
+                finally,
+            } => {
+                let start = body.kwtry.offset;
+                let end_pos = if finally.is_some() {
+                    finally.as_ref().unwrap().cbrace
+                } else {
+                    catch.as_ref().unwrap().cbrace
+                };
+                let end = end_pos.offset + end_pos.length;
                 Pos::span(start, end - start)
             }
         }

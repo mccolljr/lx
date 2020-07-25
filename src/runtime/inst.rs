@@ -43,6 +43,12 @@ pub enum Inst {
         insts:    Rc<[Inst]>,
         on_break: usize,
     },
+    RunTryFrame {
+        insts:      Rc<[Inst]>,
+        name:       Option<String>,
+        on_catch:   Option<Rc<[Inst]>>,
+        on_finally: Option<Rc<[Inst]>>,
+    },
     CallBegin,
     CallAppend,
     CallEnd,
