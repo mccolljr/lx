@@ -48,34 +48,33 @@ impl ParseScope {
         self.decls.borrow().get(name).map(|pos| *pos)
     }
 
-    fn declare(&self, name: String, at: Pos) -> Result<(), SyntaxError> {
+    fn declare(&self, name: String, at: Pos) -> Option<Pos> {
         if let Some(original) = self.get_local_decl(&name) {
-            return Err(SyntaxError::Redeclaration { at, original, name });
+            return Some(original);
         }
-        self.decls.borrow_mut().insert(name, at);
-        Ok(())
+        self.decls.borrow_mut().insert(name.clone(), at);
+        None
     }
 
-    fn utilize(&self, name: &String, pos: Pos) -> Result<(), SyntaxError> {
+    fn utilize(&self, name: &String, pos: Pos) -> bool {
         if self.get_local_decl(name).is_some() {
             // found in local scope
-            return Ok(());
+            return true;
         }
 
         if let Some(parent) = &self.parent {
             // if the name is found several scopes up, we need to capture it in
             // all of the intermediate scopes, too.
-            parent.utilize(name, pos)?;
+            if !parent.utilize(name, pos) {
+                return false;
+            }
             // if we get here, it was found in or above the parent scope,
             // and we need to capture the name
             self.captures.borrow_mut().push(name.clone());
-            return Ok(());
+            return true;
         }
 
-        Err(SyntaxError::Undeclared {
-            at:   pos,
-            name: name.clone(),
-        })
+        return false;
     }
 }
 
@@ -89,19 +88,27 @@ pub struct Parser {
 }
 
 impl Parser {
-    pub fn new(
+    pub fn parse_file(
         src: &Code,
-        with_scope_tracking: bool,
+        track_scope: bool,
         globals: Vec<String>,
-    ) -> Self {
-        let mut p = Parser {
+    ) -> Result<Vec<Stmt>, SyntaxError> {
+        let mut p = Parser::new(src, track_scope, globals);
+        p.advance()?;
+        p.parse_stmt_list(&[TokenType::EOF])
+    }
+
+    fn new(src: &Code, track_scope: bool, globals: Vec<String>) -> Self {
+        Parser {
             lex:        Lexer::new(src),
             cur_t:      Token::new_meta(0, TokenType::EOF),
             peek_t:     Token::new_meta(0, TokenType::EOF),
-            scope:      if with_scope_tracking {
+            scope:      if track_scope {
                 let global = ParseScope::create(None);
                 for name in globals {
-                    global.declare(name, Pos::mark(0)).unwrap();
+                    global
+                        .declare(name, Pos::mark(0))
+                        .expect_none("duplicate global");
                 }
                 Some(ParseScope::create(Some(global)))
             } else {
@@ -109,9 +116,7 @@ impl Parser {
             },
             func_depth: 0,
             loop_depth: 0,
-        };
-        p.advance().expect("fatal error");
-        p
+        }
     }
 
     fn open_scope(&mut self) {
@@ -132,7 +137,14 @@ impl Parser {
         pos: Pos,
     ) -> Result<(), SyntaxError> {
         if let Some(scope) = &self.scope {
-            return scope.declare(name, pos);
+            if let Some(orig_decl_pos) = scope.declare(name.clone(), pos) {
+                return Err(SyntaxError::Redeclaration {
+                    code: self.lex.src.clone(),
+                    at: pos,
+                    original: orig_decl_pos,
+                    name,
+                });
+            }
         }
         Ok(())
     }
@@ -143,7 +155,13 @@ impl Parser {
         pos: Pos,
     ) -> Result<(), SyntaxError> {
         if let Some(scope) = &self.scope {
-            return scope.utilize(name, pos);
+            if !scope.utilize(name, pos) {
+                return Err(SyntaxError::Undeclared {
+                    code: self.lex.src.clone(),
+                    at:   pos,
+                    name: name.clone(),
+                });
+            }
         }
         Ok(())
     }
@@ -178,6 +196,7 @@ impl Parser {
                     self.parse_return_stmt()
                 } else {
                     Err(SyntaxError::NotAllowed {
+                        code: self.lex.src.clone(),
                         at:   self.peek_t.pos,
                         what: String::from(
                             "return not allowed outside of function",
@@ -190,6 +209,7 @@ impl Parser {
                     self.parse_yield_stmt()
                 } else {
                     Err(SyntaxError::NotAllowed {
+                        code: self.lex.src.clone(),
                         at:   self.peek_t.pos,
                         what: String::from(
                             "yield not allowed outside of function",
@@ -205,6 +225,7 @@ impl Parser {
                     })
                 } else {
                     Err(SyntaxError::NotAllowed {
+                        code: self.lex.src.clone(),
                         at:   self.peek_t.pos,
                         what: String::from("break not allowed outside of loop"),
                     })
@@ -280,6 +301,7 @@ impl Parser {
             }
             _ => {
                 Err(SyntaxError::Expected {
+                    code:   self.lex.src.clone(),
                     at:     self.peek_t.pos,
                     wanted: "ident, array destructure, or object destructure"
                         .into(),
@@ -329,6 +351,7 @@ impl Parser {
             }
             _ => {
                 Err(SyntaxError::Expected {
+                    code:   self.lex.src.clone(),
                     at:     self.peek_t.pos,
                     wanted: "object destrucruting item".into(),
                     found:  format!("{}", self.peek_t.typ),
@@ -502,9 +525,10 @@ impl Parser {
         }
         if catch.is_none() && finally.is_none() {
             return Err(SyntaxError::Expected {
+                code:   self.lex.src.clone(),
                 at:     self.peek_t.pos,
                 wanted: "catch or finally".into(),
-                found:  format!("{:?}", self.peek_t.typ),
+                found:  format!("{}", self.peek_t.typ),
             });
         }
         Ok(Stmt::Try {
@@ -569,6 +593,7 @@ impl Parser {
                 });
             }
             return Err(SyntaxError::InvalidAssignment {
+                code:  self.lex.src.clone(),
                 at:    x.pos(),
                 found: format!("{}", x),
             });
@@ -738,9 +763,10 @@ impl Parser {
             }
             _ => {
                 return Err(SyntaxError::Expected {
+                    code:   self.lex.src.clone(),
                     at:     self.cur_t.pos,
                     wanted: "expression".into(),
-                    found:  format!("{:?}", self.cur_t.typ),
+                    found:  format!("{}", self.cur_t.typ),
                 })
             }
         };
@@ -854,9 +880,10 @@ impl Parser {
                 }
                 _ => {
                     return Err(SyntaxError::Expected {
+                        code:   self.lex.src.clone(),
                         at:     self.peek_t.pos,
                         wanted: "field key".into(),
-                        found:  format!("{:?}", self.peek_t.typ),
+                        found:  format!("{}", self.peek_t.typ),
                     })
                 }
             }
@@ -889,9 +916,10 @@ impl Parser {
         self.advance()?;
         if self.cur_t.typ != expected {
             return Err(SyntaxError::Expected {
+                code:   self.lex.src.clone(),
                 at:     self.cur_t.pos,
-                wanted: format!("{:?}", expected),
-                found:  format!("{:?}", self.cur_t.typ),
+                wanted: format!("{}", expected),
+                found:  format!("{}", self.cur_t.typ),
             });
         }
         Ok(self.cur_t.clone())
@@ -945,6 +973,7 @@ mod test {
         ($src:expr, $want:expr) => {{
             let src = crate::source::Code::from($src);
             let mut parser = crate::parser::Parser::new(&src, false, vec![]);
+            parser.advance().expect("failed to parse first token");
             let got = parser.parse_expr(0).unwrap();
             assert_eq!($want, got);
         }};
@@ -954,6 +983,7 @@ mod test {
         ($src:expr, $want:expr) => {{
             let src = crate::source::Code::from($src);
             let mut parser = crate::parser::Parser::new(&src, false, vec![]);
+            parser.advance().expect("failed to parse first token");
             let got = format!("{}", parser.parse_expr(0).unwrap());
             assert_eq!($want, got);
         }};

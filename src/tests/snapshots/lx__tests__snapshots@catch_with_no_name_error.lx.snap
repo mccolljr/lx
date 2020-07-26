@@ -1,0 +1,7 @@
+---
+source: src/tests/mod.rs
+expression: output_str
+input_file: src/tests/testdata/catch_with_no_name_error.lx
+---
+ERROR! expected identifier, but found { at line 3:9
+

@@ -54,9 +54,32 @@ impl Index<usize> for Code {
     fn index(&self, index: usize) -> &Self::Output { &self.0.as_ref()[index] }
 }
 
+impl Code {
+    pub fn describe(&self, pos: Pos) -> String {
+        let Pos { offset, .. } = pos;
+        let mut line_offset = 0i64;
+        let mut line = 0i64;
+        let mut next_char_change_line = true;
+        for i in 0..=offset {
+            if next_char_change_line {
+                line += 1;
+                line_offset = 1;
+                next_char_change_line = false;
+            } else {
+                line_offset += 1;
+            }
+            if i < self.len() && self[i] == '\n' {
+                next_char_change_line = true;
+            }
+        }
+        format!("line {}:{}", line, line_offset)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::Code;
+    use super::Pos;
 
     #[test]
     fn test_code() {
@@ -70,6 +93,29 @@ mod tests {
         assert_eq!(s[3], 'd');
         assert_eq!(s[4], 'e');
         assert_eq!(s[5], 'f');
+    }
+
+    #[test]
+    fn test_describe() {
+        let s = Code::from("abc\n def\nghi\n jkl");
+        assert_eq!(s.describe(Pos::span(0, 17)), "line 1:1");
+        assert_eq!(s.describe(Pos::span(1, 16)), "line 1:2");
+        assert_eq!(s.describe(Pos::span(2, 15)), "line 1:3");
+        assert_eq!(s.describe(Pos::span(3, 14)), "line 1:4");
+        assert_eq!(s.describe(Pos::span(4, 13)), "line 2:1");
+        assert_eq!(s.describe(Pos::span(5, 12)), "line 2:2");
+        assert_eq!(s.describe(Pos::span(6, 11)), "line 2:3");
+        assert_eq!(s.describe(Pos::span(7, 10)), "line 2:4");
+        assert_eq!(s.describe(Pos::span(8, 9)), "line 2:5");
+        assert_eq!(s.describe(Pos::span(9, 8)), "line 3:1");
+        assert_eq!(s.describe(Pos::span(10, 7)), "line 3:2");
+        assert_eq!(s.describe(Pos::span(11, 6)), "line 3:3");
+        assert_eq!(s.describe(Pos::span(12, 5)), "line 3:4");
+        assert_eq!(s.describe(Pos::span(13, 4)), "line 4:1");
+        assert_eq!(s.describe(Pos::span(14, 3)), "line 4:2");
+        assert_eq!(s.describe(Pos::span(15, 2)), "line 4:3");
+        assert_eq!(s.describe(Pos::span(16, 1)), "line 4:4");
+        assert_eq!(s.describe(Pos::span(17, 0)), "line 4:5");
     }
 }
 

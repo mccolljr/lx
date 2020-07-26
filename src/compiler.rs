@@ -16,7 +16,6 @@ use crate::runtime::frame::{
 use crate::runtime::inst::Inst;
 use crate::runtime::value::Value;
 use crate::source::Code;
-use crate::token::TokenType;
 
 use std::rc::Rc;
 
@@ -334,12 +333,8 @@ fn compile_for_loop(var: String, stmts: Vec<Stmt>, on_break: usize) -> Inst {
     };
 }
 
-pub fn compile(
-    src: impl Into<String>,
-    globals: Vec<String>,
-) -> Result<Vec<Inst>, Error> {
-    let mut parser = Parser::new(&Code::from(src.into()), true, globals);
-    let stmts = parser.parse_stmt_list(&[TokenType::EOF])?;
+pub fn compile(src: Code, globals: Vec<String>) -> Result<Vec<Inst>, Error> {
+    let stmts = Parser::parse_file(&src, true, globals)?;
     let mut insts = Vec::<Inst>::new();
     for stmt in stmts {
         compile_stmt(&mut insts, stmt);

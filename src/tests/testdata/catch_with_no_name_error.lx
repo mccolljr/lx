@@ -1,0 +1,6 @@
+try {
+    throw "some error";
+} catch {
+    // oops, this should have a named error var:
+    // catch some_name { ... }
+}

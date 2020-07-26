@@ -1,0 +1,4 @@
+(fn() {
+    // disallowed outside of loops
+    break;
+});

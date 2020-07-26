@@ -12,11 +12,11 @@ use crate::token::{
 use std::iter::FromIterator;
 
 pub struct Lexer {
-    src:    Code,
-    cur_i:  usize,
-    cur_c:  char,
-    peek_i: usize,
-    peek_c: char,
+    pub(crate) src: Code,
+    cur_i:          usize,
+    cur_c:          char,
+    peek_i:         usize,
+    peek_c:         char,
 }
 
 impl Lexer {
@@ -75,8 +75,9 @@ impl Lexer {
             '!' => self.lex_2(&[('=', OpNeq)], Bang),
             _ => {
                 Err(SyntaxError::InvalidCharacter {
-                    at: Pos::one(self.cur_i),
-                    ch: self.cur_c,
+                    code: self.src.clone(),
+                    at:   Pos::one(self.cur_i),
+                    ch:   self.cur_c,
                 })
             }
         }
@@ -158,7 +159,8 @@ impl Lexer {
                 loop {
                     if self.peek_eof() {
                         return Err(SyntaxError::UnterminatedBlockComment {
-                            at: Pos::span(start, self.peek_i - start),
+                            code: self.src.clone(),
+                            at:   Pos::span(start, self.peek_i - start),
                         });
                     }
                     if self.peek_c == '*' {
@@ -197,6 +199,7 @@ impl Lexer {
             if self.peek_c == 'e' {
                 if has_exp {
                     return Err(SyntaxError::UnexpectedCharacter {
+                        code:    self.src.clone(),
                         at:      Pos::one(self.peek_i),
                         ch:      self.peek_c,
                         context: "numeric literal",
@@ -214,6 +217,7 @@ impl Lexer {
             if self.peek_c == '.' {
                 if has_exp || has_decimal {
                     return Err(SyntaxError::UnexpectedCharacter {
+                        code:    self.src.clone(),
                         at:      Pos::one(self.peek_i),
                         ch:      self.peek_c,
                         context: "numeric literal",
@@ -306,7 +310,8 @@ impl Lexer {
         }
 
         Err(SyntaxError::UnterminatedStringLiteral {
-            at: Pos::mark(start),
+            code: self.src.clone(),
+            at:   Pos::mark(start),
         })
     }
 
@@ -319,7 +324,8 @@ impl Lexer {
         self.advance();
         if self.at_eof() {
             return Err(SyntaxError::UnterminatedStringLiteral {
-                at: Pos::mark(start),
+                code: self.src.clone(),
+                at:   Pos::mark(start),
             });
         }
 
@@ -343,8 +349,9 @@ impl Lexer {
             }
             _ => {
                 Err(SyntaxError::InvalidEscapeSequence {
-                    at: Pos::one(self.cur_i),
-                    ch: self.cur_c,
+                    code: self.src.clone(),
+                    at:   Pos::one(self.cur_i),
+                    ch:   self.cur_c,
                 })
             }
         }

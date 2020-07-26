@@ -1,0 +1,7 @@
+---
+source: src/tests/mod.rs
+expression: output_str
+input_file: src/tests/testdata/assign_to_int_literal_error.lx
+---
+ERROR! unable to assign to 1 at line 1:1
+

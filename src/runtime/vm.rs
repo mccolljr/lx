@@ -23,6 +23,7 @@ use crate::runtime::value::{
     Object,
     Value,
 };
+use crate::source::Code;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -44,8 +45,9 @@ impl VM {
             builtins()
         };
 
+        let code = Code::from(src.into());
         let insts = Rc::from(compile(
-            src,
+            code,
             global_values.keys().map(String::clone).collect(),
         )?);
         let root_scope = Rc::from(Scope::new(None));
@@ -110,9 +112,12 @@ impl VMState {
         if let Some(existing) = self.imports.borrow().get(&path) {
             return Ok(Value::Object(existing.clone()));
         }
-        let src = std::fs::read_to_string(&path).expect("unable to import");
-        let insts: Rc<[Inst]> =
-            Rc::from(compile(src, self.root_scope.names())?);
+        let insts: Rc<[Inst]> = Rc::from(compile(
+            Code::from(
+                std::fs::read_to_string(&path).expect("unable to import"),
+            ),
+            self.root_scope.names(),
+        )?);
         let import_scope =
             Rc::new(Scope::new(Some(Rc::clone(&self.root_scope))));
         match self.run_frame(Frame::new(insts, import_scope.clone(), 0)) {
