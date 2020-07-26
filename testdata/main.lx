@@ -1,27 +1,5 @@
-let fib = (fn(){
-    let cache = {(0): 0, (1): 1};
-    let _fib = fn(n) {
-        if typeof n != 'int' {
-            throw "n must be an integer";
-        }
-        if n < 0 {
-            throw "n must be greater than or equal to 0";
-        }
-        let result = cache[n];
-        if result == null {
-            result = _fib(n-2) + _fib(n-1);
-            cache[n] = result;
-        }
-        return result;
-    };
-    return _fib;
-})();
-
-for i in range(0,1000) {
-    try {
-        printf("fib({}): {}", i, fib(i));
-    } catch fib_err {
-        printf("fib({}): error: {}", i, fib_err);
-        break;
-    }
+try {
+    throw "oops";
+} catch e {
+    print( "caught", e);
 }

@@ -1,0 +1,1 @@
+1 = 1; // this should not parse, because we can't assign to a literal.

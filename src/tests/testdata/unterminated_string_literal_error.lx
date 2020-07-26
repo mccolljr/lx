@@ -1,0 +1,4 @@
+"this string is not terminated,
+    even though it spans multiple
+    lines and contains a n escaped
+    terminator: \"

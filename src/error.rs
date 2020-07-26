@@ -1,37 +1,41 @@
-use crate::source::Pos;
+use crate::source::{
+    Code,
+    Pos,
+};
 
 quick_error! {
     #[derive(Debug, Clone)]
     pub enum SyntaxError {
-        InvalidCharacter{at: Pos, ch: char} {
-            display("at {:?}: invalid character '{}'", at, ch)
+        InvalidCharacter{code: Code, at: Pos, ch: char} {
+            display("at {}: invalid character '{}'", code.describe(*at), ch)
         }
-        UnexpectedCharacter{at: Pos, ch: char, context: &'static str} {
-            display("at {:?}: unexpected character '{}' in {}", at, ch, context)
+        UnexpectedCharacter{code: Code, at: Pos, ch: char, context: &'static str} {
+            display("at {}: unexpected character '{}' in {}", code.describe(*at), ch, context)
         }
-        UnterminatedStringLiteral{at: Pos} {
-            display("unterminated string literal at {:?}", at)
+        UnterminatedStringLiteral{code: Code, at: Pos} {
+            display("unterminated string literal starting at {}", code.describe(*at))
         }
-        InvalidEscapeSequence{at: Pos, ch: char} {
-            display("invalid escape sequence '\\{}' at {:?}", ch, at)
+        InvalidEscapeSequence{code: Code, at: Pos, ch: char} {
+            display("invalid escape sequence '\\{}' at {}", ch, code.describe(*at))
         }
-        Expected{at: Pos, wanted: String, found: String} {
-            display("expected {}, but found {} at {:?}", wanted, found, at)
+        Expected{code: Code, at: Pos, wanted: String, found: String} {
+            display("expected {}, but found {} at {}", wanted, found, code.describe(*at))
         }
-        InvalidAssignment{at: Pos, found: String} {
-            display("unable to assign to {} at {:?}", found, at)
+        InvalidAssignment{code: Code, at: Pos, found: String} {
+            display("unable to assign to {} at {}", found, code.describe(*at))
         }
-        Redeclaration{at: Pos, original: Pos, name: String} {
-            display("redeclaration of '{}' at {:?} (original declaration is at {:?})", name, at, original)
+        Redeclaration{code: Code, at: Pos, original: Pos, name: String} {
+            display("redeclaration of '{}' at {} (original declaration is at {})",
+                    name, code.describe(*at), code.describe(*original))
         }
-        Undeclared{at: Pos, name: String} {
-            display("use of undeclared variable '{}' at {:?}", name, at)
+        Undeclared{code: Code, at: Pos, name: String} {
+            display("use of undeclared variable '{}' at {}", name, code.describe(*at))
         }
-        NotAllowed{at: Pos, what: String} {
-            display("{} at {:?}", what, at)
+        NotAllowed{code: Code, at: Pos, what: String} {
+            display("{} at {}", what, code.describe(*at))
         }
-        UnterminatedBlockComment{at: Pos} {
-            display("unterminated block comment at {:?}", at)
+        UnterminatedBlockComment{code: Code, at: Pos} {
+            display("unterminated block comment at {}", code.describe(*at))
         }
     }
 }

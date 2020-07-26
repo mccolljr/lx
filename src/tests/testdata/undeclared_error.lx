@@ -1,0 +1,1 @@
+print(undeclared_var);

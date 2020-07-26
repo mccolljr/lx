@@ -1,0 +1,7 @@
+---
+source: src/tests/mod.rs
+expression: output_str
+input_file: src/tests/testdata/unterminated_comment_error.lx
+---
+ERROR! unterminated block comment at line 1:1
+

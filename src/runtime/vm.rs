@@ -9,6 +9,12 @@ use crate::runtime::builtin::{
     builtins,
     extend_builtins,
 };
+use crate::runtime::frame::{
+    CatchContext,
+    FinallyContext,
+    Frame,
+    FrameStatus,
+};
 use crate::runtime::inst::Inst;
 use crate::runtime::scope::Scope;
 use crate::runtime::value::{
@@ -17,40 +23,15 @@ use crate::runtime::value::{
     Object,
     Value,
 };
+use crate::source::Code;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::ops::Try;
 use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct VM {
     state: Rc<VMState>,
-}
-
-#[derive(Debug, Clone)]
-pub enum FrameStatus {
-    Ended,           // last instruction was executed with no break or return
-    Broke,           // break statement encountered
-    Returned(Value), // return statement encountered
-    Yielded(Value),  // yield statement encountered
-    Excepted(Error), // an exception was thrown
-}
-
-impl Try for FrameStatus {
-    type Error = Error;
-    type Ok = FrameStatus;
-
-    fn into_result(self) -> Result<Self::Ok, Self::Error> {
-        match self {
-            FrameStatus::Excepted(err) => Err(err),
-            all_others => Ok(all_others),
-        }
-    }
-
-    fn from_ok(v: Self::Ok) -> Self { v }
-
-    fn from_error(err: Self::Error) -> Self { FrameStatus::Excepted(err) }
 }
 
 impl VM {
@@ -64,8 +45,9 @@ impl VM {
             builtins()
         };
 
+        let code = Code::from(src.into());
         let insts = Rc::from(compile(
-            src,
+            code,
             global_values.keys().map(String::clone).collect(),
         )?);
         let root_scope = Rc::from(Scope::new(None));
@@ -84,13 +66,11 @@ impl VM {
     }
 
     fn run(&self) -> Result<(), Error> {
-        match self.state.run_frame(
+        match self.state.run_frame(Frame::new(
             Rc::clone(&self.state.insts),
             Rc::new(Scope::new(Some(Rc::clone(&self.state.root_scope)))),
             0,
-            None,
-            None,
-        ) {
+        )) {
             FrameStatus::Excepted(err) => Err(err),
             _ => Ok(()),
         }
@@ -132,12 +112,15 @@ impl VMState {
         if let Some(existing) = self.imports.borrow().get(&path) {
             return Ok(Value::Object(existing.clone()));
         }
-        let src = std::fs::read_to_string(&path).expect("unable to import");
-        let insts: Rc<[Inst]> =
-            Rc::from(compile(src, self.root_scope.names())?);
+        let insts: Rc<[Inst]> = Rc::from(compile(
+            Code::from(
+                std::fs::read_to_string(&path).expect("unable to import"),
+            ),
+            self.root_scope.names(),
+        )?);
         let import_scope =
             Rc::new(Scope::new(Some(Rc::clone(&self.root_scope))));
-        match self.run_frame(insts, import_scope.clone(), 0, None, None) {
+        match self.run_frame(Frame::new(insts, import_scope.clone(), 0)) {
             FrameStatus::Excepted(err) => return Err(err),
             FrameStatus::Ended => { /* all good */ }
             _ => panic!("PANIC: UNEXPECTED IMPORT FRAME STATUS"),
@@ -152,14 +135,14 @@ impl VMState {
     }
 
     #[inline(always)]
-    pub(crate) fn run_frame(
-        self: &Rc<Self>,
-        insts: Rc<[Inst]>,
-        scope: Rc<Scope>,
-        start_ip: usize,
-        catch: Option<(String, Rc<[Inst]>)>,
-        finally: Option<Rc<[Inst]>>,
-    ) -> FrameStatus {
+    pub(crate) fn run_frame(self: &Rc<Self>, frame: Frame) -> FrameStatus {
+        let Frame {
+            insts,
+            scope,
+            start_ip,
+            catch,
+            finally,
+        } = frame;
         let ret_sp = self.stack.borrow().len();
         let mut ip: usize = start_ip;
         let mut result = (|| -> FrameStatus {
@@ -403,13 +386,11 @@ impl VMState {
                         return FrameStatus::Broke;
                     }
                     Inst::RunFrame { insts } => {
-                        match self.run_frame(
+                        match self.run_frame(Frame::new(
                             insts,
                             Rc::new(Scope::extend(Rc::clone(&scope))),
                             0,
-                            None,
-                            None,
-                        )? {
+                        ))? {
                             FrameStatus::Returned(v) => {
                                 return FrameStatus::Returned(v)
                             }
@@ -421,13 +402,11 @@ impl VMState {
                         }
                     }
                     Inst::RunLoopFrame { insts, on_break } => {
-                        match self.run_frame(
+                        match self.run_frame(Frame::new(
                             insts,
                             Rc::new(Scope::extend(Rc::clone(&scope))),
                             0,
-                            None,
-                            None,
-                        )? {
+                        ))? {
                             FrameStatus::Returned(v) => {
                                 return FrameStatus::Returned(v)
                             }
@@ -442,13 +421,11 @@ impl VMState {
                         }
                     }
                     Inst::RunIterFrame { insts, on_break } => {
-                        match self.run_frame(
+                        match self.run_frame(Frame::new(
                             insts,
                             Rc::new(Scope::extend(Rc::clone(&scope))),
                             0,
-                            None,
-                            None,
-                        )? {
+                        ))? {
                             FrameStatus::Returned(v) => {
                                 return FrameStatus::Returned(v)
                             }
@@ -469,17 +446,16 @@ impl VMState {
                     }
                     Inst::RunTryFrame {
                         insts,
-                        name,
-                        on_catch,
-                        on_finally,
+                        catch,
+                        finally,
                     } => {
-                        match self.run_frame(
+                        match self.run_frame(Frame::new_with_catch(
                             insts,
                             Rc::new(Scope::extend(Rc::clone(&scope))),
                             0,
-                            on_catch.map(|insts| return (name.unwrap(), insts)),
-                            on_finally,
-                        )? {
+                            catch,
+                            finally,
+                        ))? {
                             FrameStatus::Returned(v) => {
                                 return FrameStatus::Returned(v)
                             }
@@ -497,20 +473,19 @@ impl VMState {
         self.truncate_stack(ret_sp);
         if catch.is_some() {
             if let FrameStatus::Excepted(err) = result {
-                let (catch_name, catch_insts) = catch.unwrap();
+                let CatchContext(name, insts) = catch.unwrap();
                 let scope = Rc::new(Scope::extend(Rc::clone(&scope)));
-                scope.declare(catch_name, Value::from(format!("{}", err)));
-                result = self.run_frame(catch_insts, scope, 0, None, None);
+                scope.declare(name, Value::from(format!("{}", err)));
+                result = self.run_frame(Frame::new(insts, scope, 0));
             }
         }
         if finally.is_some() {
-            match self.run_frame(
-                finally.unwrap(),
+            let FinallyContext(insts) = finally.unwrap();
+            match self.run_frame(Frame::new(
+                insts,
                 Rc::new(Scope::extend(Rc::clone(&scope))),
                 0,
-                None,
-                None,
-            ) {
+            )) {
                 FrameStatus::Returned(v) => return FrameStatus::Returned(v),
                 FrameStatus::Yielded(v) => return FrameStatus::Yielded(v),
                 FrameStatus::Broke => return FrameStatus::Broke,
