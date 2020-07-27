@@ -1,0 +1,7 @@
+---
+source: src/tests/test_vm/mod.rs
+expression: output
+input_file: src/tests/test_vm/scripts_error/undeclared_error.lx
+---
+ERROR! use of undeclared variable 'undeclared_var' at line 1:7
+

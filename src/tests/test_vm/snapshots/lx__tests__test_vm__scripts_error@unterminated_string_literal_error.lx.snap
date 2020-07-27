@@ -1,0 +1,7 @@
+---
+source: src/tests/test_vm/mod.rs
+expression: output
+input_file: src/tests/test_vm/scripts_error/unterminated_string_literal_error.lx
+---
+ERROR! unterminated string literal starting at line 1:1
+

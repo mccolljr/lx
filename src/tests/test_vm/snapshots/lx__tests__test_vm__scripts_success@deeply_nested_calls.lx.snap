@@ -1,0 +1,8 @@
+---
+source: src/tests/test_vm/mod.rs
+expression: output
+input_file: src/tests/test_vm/scripts_success/deeply_nested_calls.lx
+---
+got: Int(155):
+OK!
+

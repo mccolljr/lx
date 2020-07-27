@@ -1,7 +1,7 @@
 ---
-source: src/tests/mod.rs
-expression: output_str
-input_file: src/tests/testdata/import.lx
+source: src/tests/test_vm/mod.rs
+expression: output
+input_file: src/tests/test_vm/scripts_success/fib.lx
 ---
 0
 1
@@ -96,8 +96,5 @@ input_file: src/tests/testdata/import.lx
 2880067194370816120
 4660046610375530309
 7540113804746346429
-import('**/fib.lx') == fib_lib: true
-fib == fib_lib.fib: true
-local fib(85): 259695496911122585
 OK!
 

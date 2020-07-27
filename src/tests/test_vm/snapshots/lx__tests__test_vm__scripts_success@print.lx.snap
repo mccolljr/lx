@@ -1,0 +1,8 @@
+---
+source: src/tests/test_vm/mod.rs
+expression: output
+input_file: src/tests/test_vm/scripts_success/print.lx
+---
+Hello, World
+OK!
+

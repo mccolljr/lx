@@ -1,0 +1,7 @@
+---
+source: src/tests/test_vm/mod.rs
+expression: output
+input_file: src/tests/test_vm/scripts_error/redeclaration_error.lx
+---
+ERROR! redeclaration of 'a' at line 2:5 (original declaration is at line 1:5)
+

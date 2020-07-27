@@ -1,7 +1,0 @@
----
-source: src/tests/mod.rs
-expression: output_str
-input_file: src/tests/testdata/missing_semi_error.lx
----
-ERROR! expected ;, but found end of file at line 1:22
-

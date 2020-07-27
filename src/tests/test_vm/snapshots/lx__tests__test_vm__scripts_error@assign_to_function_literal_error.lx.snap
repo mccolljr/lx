@@ -1,0 +1,8 @@
+---
+source: src/tests/test_vm/mod.rs
+expression: output
+input_file: src/tests/test_vm/scripts_error/assign_to_function_literal_error.lx
+---
+ERROR! unable to assign to (fn () {
+}) at line 1:1
+

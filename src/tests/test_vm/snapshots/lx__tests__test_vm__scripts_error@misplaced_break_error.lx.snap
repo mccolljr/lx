@@ -1,0 +1,7 @@
+---
+source: src/tests/test_vm/mod.rs
+expression: output
+input_file: src/tests/test_vm/scripts_error/misplaced_break_error.lx
+---
+ERROR! break not allowed outside of loop at line 3:5
+

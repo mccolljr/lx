@@ -1,0 +1,7 @@
+---
+source: src/tests/test_vm/mod.rs
+expression: output
+input_file: src/tests/test_vm/scripts_error/misplaced_return_error.lx
+---
+ERROR! return not allowed outside of function at line 2:1
+

@@ -1,0 +1,21 @@
+---
+source: src/tests/test_vm/mod.rs
+expression: output
+input_file: src/tests/test_vm/scripts_success/constants.lx
+---
+1
+1.5
+0.0000000000015
+def
+abc
+
+abc
+    def
+        ghi
+            jkl
+
+true
+false
+null
+OK!
+

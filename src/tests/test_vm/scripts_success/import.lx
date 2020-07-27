@@ -1,0 +1,14 @@
+let { fib } = import('./src/tests/test_vm/scripts_success/fib.lx');
+let fib_lib = import('./src/tests/test_vm/scripts_success/fib.lx');
+
+print(
+    "import('**/fib.lx') == fib_lib:", 
+    import('./src/tests/test_vm/scripts_success/fib.lx') == fib_lib
+);
+
+print(
+    'fib == fib_lib.fib:',
+    fib == fib_lib.fib
+);
+
+print('local fib(85):', fib(85));
