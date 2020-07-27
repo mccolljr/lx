@@ -5,7 +5,6 @@ extern crate quick_error;
 extern crate regex;
 
 mod ast;
-mod ast_rewrite;
 mod compiler;
 mod error;
 mod lexer;

@@ -6,7 +6,6 @@ use crate::ast::{
     ObjKey,
     Stmt,
 };
-use crate::ast_rewrite::simplify_expr;
 use crate::error::Error;
 use crate::parser::Parser;
 use crate::runtime::frame::{
@@ -22,11 +21,11 @@ use std::rc::Rc;
 fn compile_stmt(insts: &mut Vec<Inst>, stmt: Stmt) {
     match stmt {
         Stmt::Expr { expr, .. } => {
-            compile_expr(insts, simplify_expr(*expr));
+            compile_expr(insts, *expr);
             insts.push(Inst::StackPop);
         }
         Stmt::Let { target, expr, .. } => {
-            compile_expr(insts, simplify_expr(*expr));
+            compile_expr(insts, *expr);
             match target {
                 LetTarget::Ident(ident) => {
                     insts.push(Inst::ScopeDefine(ident.name));
@@ -58,19 +57,19 @@ fn compile_stmt(insts: &mut Vec<Inst>, stmt: Stmt) {
         Stmt::Assignment { target, rhs, .. } => {
             match target {
                 AssignTarget::Ident(ident) => {
-                    compile_expr(insts, simplify_expr(*rhs));
+                    compile_expr(insts, *rhs);
                     insts.push(Inst::ScopeStore(ident.name));
                 }
                 AssignTarget::Index(expr, index) => {
-                    compile_expr(insts, simplify_expr(*expr));
-                    compile_expr(insts, simplify_expr(*index));
-                    compile_expr(insts, simplify_expr(*rhs));
+                    compile_expr(insts, *expr);
+                    compile_expr(insts, *index);
+                    compile_expr(insts, *rhs);
                     insts.push(Inst::OperationIndexSet);
                 }
                 AssignTarget::Select(expr, selector) => {
-                    compile_expr(insts, simplify_expr(*expr));
+                    compile_expr(insts, *expr);
                     insts.push(Inst::StackPush(Value::from(selector.name)));
-                    compile_expr(insts, simplify_expr(*rhs));
+                    compile_expr(insts, *rhs);
                     insts.push(Inst::OperationIndexSet);
                 }
             };
@@ -79,7 +78,7 @@ fn compile_stmt(insts: &mut Vec<Inst>, stmt: Stmt) {
             let mut escape_indices: Vec<usize> =
                 Vec::with_capacity(head.len() + 1);
             for block in head {
-                compile_expr(insts, simplify_expr(*block.cond));
+                compile_expr(insts, *block.cond);
                 let branch_idx = insts.len();
                 insts.push(Inst::Illegal);
                 let start_idx = insts.len();
@@ -100,7 +99,7 @@ fn compile_stmt(insts: &mut Vec<Inst>, stmt: Stmt) {
         }
         Stmt::While { cond, body, .. } => {
             let cond_start_idx = insts.len();
-            compile_expr(insts, simplify_expr(*cond));
+            compile_expr(insts, *cond);
             let cond_branch_idx = insts.len();
             insts.push(Inst::Illegal);
             let body_frame_idx = insts.len();
@@ -114,7 +113,7 @@ fn compile_stmt(insts: &mut Vec<Inst>, stmt: Stmt) {
         Stmt::ForIn {
             ident, expr, body, ..
         } => {
-            compile_expr(insts, simplify_expr(*expr));
+            compile_expr(insts, *expr);
             insts.push(Inst::BuildIter);
             let body_frame_idx = insts.len();
             insts.push(Inst::Illegal);
@@ -122,15 +121,15 @@ fn compile_stmt(insts: &mut Vec<Inst>, stmt: Stmt) {
             insts[body_frame_idx] = compile_for_loop(ident.name, body, end_idx);
         }
         Stmt::Return { expr, .. } => {
-            compile_expr(insts, simplify_expr(*expr));
+            compile_expr(insts, *expr);
             insts.push(Inst::ControlReturn);
         }
         Stmt::Yield { expr, .. } => {
-            compile_expr(insts, simplify_expr(*expr));
+            compile_expr(insts, *expr);
             insts.push(Inst::ControlYield);
         }
         Stmt::Throw { error, .. } => {
-            compile_expr(insts, simplify_expr(*error));
+            compile_expr(insts, *error);
             insts.push(Inst::ControlThrow);
         }
         Stmt::Break { .. } => insts.push(Inst::ControlBreak),
