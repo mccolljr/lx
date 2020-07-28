@@ -2,9 +2,9 @@ use crate::ast::{
     AssignTarget,
     Expr,
     FnArg,
-    LetTarget,
     ObjKey,
     Stmt,
+    VDeclTarget,
 };
 use crate::error::Error;
 use crate::parser::Parser;
@@ -24,21 +24,21 @@ fn compile_stmt(insts: &mut Vec<Inst>, stmt: Stmt) {
             compile_expr(insts, *expr);
             insts.push(Inst::StackPop);
         }
-        Stmt::Let { target, expr, .. } => {
+        Stmt::VDecl { target, expr, .. } => {
             compile_expr(insts, *expr);
             match target {
-                LetTarget::Ident(ident) => {
+                VDeclTarget::Ident(ident) => {
                     insts.push(Inst::ScopeDefine(ident.name));
                 }
-                LetTarget::ArrDestruct(names) => {
+                VDeclTarget::ArrDestruct(names) => {
                     insts.push(Inst::DestructureArray(Rc::from(names)));
                 }
-                LetTarget::ObjDestruct(items) => {
+                VDeclTarget::ObjDestruct(items) => {
                     insts.push(Inst::DestructureObject(Rc::from(items)));
                 }
             }
         }
-        Stmt::FnDef {
+        Stmt::FDecl {
             name,
             args,
             body,
@@ -54,6 +54,7 @@ fn compile_stmt(insts: &mut Vec<Inst>, stmt: Stmt) {
             );
             insts.push(Inst::ScopeDefine(name.name));
         }
+        Stmt::TDecl { .. } => { /* don't compile types */ }
         Stmt::Assignment { target, rhs, .. } => {
             match target {
                 AssignTarget::Ident(ident) => {

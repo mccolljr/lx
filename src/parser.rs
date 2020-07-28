@@ -6,13 +6,14 @@ use crate::ast::{
     FnArg,
     Ident,
     IfBlock,
-    LetTarget,
     Node,
     ObjDestructItem,
     ObjField,
     ObjKey,
     Stmt,
     TryBlock,
+    Type,
+    VDeclTarget,
 };
 use crate::error::SyntaxError;
 use crate::lexer::Lexer;
@@ -56,7 +57,7 @@ impl ParseScope {
         None
     }
 
-    fn utilize(&self, name: &String, pos: Pos) -> bool {
+    fn utilize(&self, name: &String) -> bool {
         if self.get_local_decl(name).is_some() {
             // found in local scope
             return true;
@@ -65,7 +66,7 @@ impl ParseScope {
         if let Some(parent) = &self.parent {
             // if the name is found several scopes up, we need to capture it in
             // all of the intermediate scopes, too.
-            if !parent.utilize(name, pos) {
+            if !parent.utilize(name) {
                 return false;
             }
             // if we get here, it was found in or above the parent scope,
@@ -155,7 +156,7 @@ impl Parser {
         pos: Pos,
     ) -> Result<(), SyntaxError> {
         if let Some(scope) = &self.scope {
-            if !scope.utilize(name, pos) {
+            if !scope.utilize(name) {
                 return Err(SyntaxError::Undeclared {
                     code: self.lex.src.clone(),
                     at:   pos,
@@ -186,7 +187,7 @@ impl Parser {
 
     fn parse_stmt(&mut self) -> Result<Stmt, SyntaxError> {
         match self.peek_t.typ {
-            TokenType::KwLet => self.parse_let_stmt(),
+            TokenType::KwVDecl => self.parse_let_stmt(),
             TokenType::KwFn => self.parse_fndef_stmt(),
             TokenType::KwIf => self.parse_if_stmt(),
             TokenType::KwWhile => self.parse_while_stmt(),
@@ -238,13 +239,13 @@ impl Parser {
     }
 
     fn parse_let_stmt(&mut self) -> Result<Stmt, SyntaxError> {
-        self.expect(TokenType::KwLet)?;
+        self.expect(TokenType::KwVDecl)?;
         let kwlet = self.cur_t.pos;
         let (target, target_pos) = self.parse_let_target()?;
         let assign = self.expect(TokenType::Assign)?.pos;
         let expr = Box::new(self.parse_expr(0)?);
         let semi = self.expect(TokenType::Semi)?.pos;
-        Ok(Stmt::Let {
+        Ok(Stmt::VDecl {
             kwlet,
             target,
             target_pos,
@@ -254,13 +255,13 @@ impl Parser {
         })
     }
 
-    fn parse_let_target(&mut self) -> Result<(LetTarget, Pos), SyntaxError> {
+    fn parse_let_target(&mut self) -> Result<(VDeclTarget, Pos), SyntaxError> {
         match self.peek_t.typ {
             TokenType::Ident => {
                 let Token { lit: name, pos, .. } =
                     self.expect(TokenType::Ident)?;
                 self.scope_declare(name.clone(), pos)?;
-                Ok((LetTarget::Ident(Ident { name, pos }), pos))
+                Ok((VDeclTarget::Ident(Ident { name, pos }), pos))
             }
             TokenType::OSquare => {
                 self.advance()?;
@@ -278,7 +279,7 @@ impl Parser {
                 let end_pos = self.expect(TokenType::CSquare)?.pos;
                 let end = end_pos.offset + end_pos.length;
                 Ok((
-                    LetTarget::ArrDestruct(names),
+                    VDeclTarget::ArrDestruct(names),
                     Pos::span(start, end - start),
                 ))
             }
@@ -295,7 +296,7 @@ impl Parser {
                 let end_pos = self.expect(TokenType::CBrace)?.pos;
                 let end = end_pos.offset + end_pos.length;
                 Ok((
-                    LetTarget::ObjDestruct(items),
+                    VDeclTarget::ObjDestruct(items),
                     Pos::span(start, end - start),
                 ))
             }
@@ -376,7 +377,7 @@ impl Parser {
         let body = self.parse_stmt_list(&[TokenType::CBrace])?;
         self.func_depth -= 1;
         let cbrace = self.expect(TokenType::CBrace)?.pos;
-        let stmt = Stmt::FnDef {
+        let stmt = Stmt::FDecl {
             kwfn,
             name,
             oparen,

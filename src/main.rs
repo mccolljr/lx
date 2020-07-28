@@ -2,6 +2,7 @@
 
 #[macro_use]
 extern crate quick_error;
+extern crate itertools;
 extern crate regex;
 
 mod ast;

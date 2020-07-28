@@ -62,7 +62,7 @@ pub enum TokenType {
     OpLt,
     OpGt,
 
-    KwLet,
+    KwVDecl,
     KwFn,
     KwIf,
     KwElif,
@@ -82,6 +82,10 @@ pub enum TokenType {
     KwTry,
     KwCatch,
     KwFinally,
+    KwAny,
+    KwMap,
+    KwArray,
+    KwType,
 
     Comment,
 }
@@ -119,7 +123,7 @@ impl Display for TokenType {
             OpGeq => write!(f, ">="),
             OpLt => write!(f, "<"),
             OpGt => write!(f, ">"),
-            KwLet => write!(f, "let"),
+            KwVDecl => write!(f, "let"),
             KwFn => write!(f, "fn"),
             KwIf => write!(f, "if"),
             KwElif => write!(f, "elif"),
@@ -139,6 +143,10 @@ impl Display for TokenType {
             KwTry => write!(f, "try"),
             KwCatch => write!(f, "catch"),
             KwFinally => write!(f, "finally"),
+            KwAny => write!(f, "any"),
+            KwMap => write!(f, "map"),
+            KwArray => write!(f, "array"),
+            KwType => write!(f, "type"),
             Comment => write!(f, "comment"),
         }
     }
