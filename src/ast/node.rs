@@ -13,9 +13,9 @@ impl Node for Type {
         match self {
             Type::Any { pos } => *pos,
             Type::Named { ident } => ident.pos,
-            Type::Null { question, inner } => {
+            Type::Null { question, element } => {
                 let start = question.offset;
-                let endpos = inner.pos();
+                let endpos = element.pos();
                 let end = endpos.offset + endpos.length;
                 Pos::span(start, end - start)
             }
@@ -43,6 +43,19 @@ impl Node for Type {
                 let end = csquare.offset + csquare.length;
                 Pos::span(start, end - start)
             }
+            Type::Union { alts } => {
+                let start =
+                    alts.first().expect("empty union type").pos().offset;
+                let endpos = alts.last().unwrap().pos();
+                let end = endpos.offset + endpos.length;
+                Pos::span(start, end - start)
+            }
+            Type::Func { kwfn, ret, .. } => {
+                let start = kwfn.offset;
+                let endpos = ret.pos();
+                let end = endpos.offset + endpos.length;
+                Pos::span(start, end - start)
+            }
         }
     }
 }
@@ -50,17 +63,17 @@ impl Node for Type {
 impl Node for Stmt {
     fn pos(&self) -> Pos {
         match self {
-            Stmt::VDecl { kwlet, semi, .. } => {
+            Stmt::LetDecl { kwlet, semi, .. } => {
                 let start = kwlet.offset;
                 let end = semi.offset + semi.length;
                 Pos::span(start, end - start)
             }
-            Stmt::FDecl { kwfn, cbrace, .. } => {
+            Stmt::FnDecl { kwfn, cbrace, .. } => {
                 let start = kwfn.offset;
                 let end = cbrace.offset + cbrace.length;
                 Pos::span(start, end - start)
             }
-            Stmt::TDecl { kwtype, typ, .. } => {
+            Stmt::TypeDecl { kwtype, typ, .. } => {
                 let start = kwtype.offset;
                 let endpos = typ.pos();
                 let end = endpos.offset + endpos.length;

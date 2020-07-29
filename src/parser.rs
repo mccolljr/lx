@@ -6,14 +6,16 @@ use crate::ast::{
     FnArg,
     Ident,
     IfBlock,
+    LetDeclTarget,
     Node,
     ObjDestructItem,
-    ObjField,
     ObjKey,
+    ObjLitField,
+    ObjTypeField,
     Stmt,
     TryBlock,
     Type,
-    VDeclTarget,
+    TypeAnnotation,
 };
 use crate::error::SyntaxError;
 use crate::lexer::Lexer;
@@ -187,7 +189,7 @@ impl Parser {
 
     fn parse_stmt(&mut self) -> Result<Stmt, SyntaxError> {
         match self.peek_t.typ {
-            TokenType::KwVDecl => self.parse_let_stmt(),
+            TokenType::KwLetDecl => self.parse_let_stmt(),
             TokenType::KwFn => self.parse_fndef_stmt(),
             TokenType::KwIf => self.parse_if_stmt(),
             TokenType::KwWhile => self.parse_while_stmt(),
@@ -239,64 +241,63 @@ impl Parser {
     }
 
     fn parse_let_stmt(&mut self) -> Result<Stmt, SyntaxError> {
-        self.expect(TokenType::KwVDecl)?;
+        self.expect(TokenType::KwLetDecl)?;
         let kwlet = self.cur_t.pos;
         let (target, target_pos) = self.parse_let_target()?;
+        let annotation = if self.peek_t.typ == TokenType::Colon {
+            Some(self.parse_type_annotation()?)
+        } else {
+            None
+        };
         let assign = self.expect(TokenType::Assign)?.pos;
         let expr = Box::new(self.parse_expr(0)?);
         let semi = self.expect(TokenType::Semi)?.pos;
-        Ok(Stmt::VDecl {
+        Ok(Stmt::LetDecl {
             kwlet,
             target,
             target_pos,
+            annotation,
             assign,
             expr,
             semi,
         })
     }
 
-    fn parse_let_target(&mut self) -> Result<(VDeclTarget, Pos), SyntaxError> {
+    fn parse_let_target(
+        &mut self,
+    ) -> Result<(LetDeclTarget, Pos), SyntaxError> {
         match self.peek_t.typ {
             TokenType::Ident => {
                 let Token { lit: name, pos, .. } =
                     self.expect(TokenType::Ident)?;
                 self.scope_declare(name.clone(), pos)?;
-                Ok((VDeclTarget::Ident(Ident { name, pos }), pos))
+                Ok((LetDeclTarget::Ident(Ident { name, pos }), pos))
             }
             TokenType::OSquare => {
                 self.advance()?;
                 let start = self.cur_t.pos.offset;
-                let mut names = Vec::<String>::new();
-                while self.peek_t.typ != TokenType::CSquare {
-                    if names.len() > 0 {
-                        self.expect(TokenType::Comma)?;
-                    }
-                    let Token { lit: name, pos, .. } =
-                        self.expect(TokenType::Ident)?;
-                    self.scope_declare(name.clone(), pos)?;
-                    names.push(name);
-                }
+                let names = self.parse_trailing_comma_list(
+                    TokenType::CSquare,
+                    Parser::parse_array_destruct_item,
+                )?;
                 let end_pos = self.expect(TokenType::CSquare)?.pos;
                 let end = end_pos.offset + end_pos.length;
                 Ok((
-                    VDeclTarget::ArrDestruct(names),
+                    LetDeclTarget::ArrDestruct(names),
                     Pos::span(start, end - start),
                 ))
             }
             TokenType::OBrace => {
                 self.advance()?;
                 let start = self.cur_t.pos.offset;
-                let mut items = Vec::<ObjDestructItem>::new();
-                while self.peek_t.typ != TokenType::CBrace {
-                    if items.len() > 0 {
-                        self.expect(TokenType::Comma)?;
-                    }
-                    items.push(self.parse_object_destruct_item()?);
-                }
+                let items = self.parse_trailing_comma_list(
+                    TokenType::CBrace,
+                    Parser::parse_object_destruct_item,
+                )?;
                 let end_pos = self.expect(TokenType::CBrace)?.pos;
                 let end = end_pos.offset + end_pos.length;
                 Ok((
-                    VDeclTarget::ObjDestruct(items),
+                    LetDeclTarget::ObjDestruct(items),
                     Pos::span(start, end - start),
                 ))
             }
@@ -310,6 +311,12 @@ impl Parser {
                 })
             }
         }
+    }
+
+    fn parse_array_destruct_item(&mut self) -> Result<String, SyntaxError> {
+        let Token { lit: name, pos, .. } = self.expect(TokenType::Ident)?;
+        self.scope_declare(name.clone(), pos)?;
+        Ok(name)
     }
 
     fn parse_object_destruct_item(
@@ -367,22 +374,31 @@ impl Parser {
         self.scope_declare(name.name.clone(), name.pos)?;
         self.open_scope();
         let oparen = self.expect(TokenType::OParen)?.pos;
-        let args = self.parse_fnarg_list()?;
+        let args = self.parse_trailing_comma_list(
+            TokenType::CParen,
+            Parser::parse_fnarg,
+        )?;
         for arg in args.iter() {
             self.scope_declare(arg.name.clone(), arg.pos)?;
         }
         let cparen = self.expect(TokenType::CParen)?.pos;
+        let ret_typ = if self.peek_t.typ == TokenType::Colon {
+            Some(self.parse_type_annotation()?)
+        } else {
+            None
+        };
         let obrace = self.expect(TokenType::OBrace)?.pos;
         self.func_depth += 1;
         let body = self.parse_stmt_list(&[TokenType::CBrace])?;
         self.func_depth -= 1;
         let cbrace = self.expect(TokenType::CBrace)?.pos;
-        let stmt = Stmt::FDecl {
+        let stmt = Stmt::FnDecl {
             kwfn,
             name,
             oparen,
             args,
             cparen,
+            ret_typ,
             obrace,
             body,
             cbrace,
@@ -607,16 +623,11 @@ impl Parser {
 
     fn parse_expr_list(
         &mut self,
-        terminators: Vec<TokenType>,
+        terminator: TokenType,
     ) -> Result<Vec<Expr>, SyntaxError> {
-        let mut exprs: Vec<Expr> = Vec::with_capacity(3);
-        while !terminators.contains(&self.peek_t.typ) {
-            if exprs.len() > 0 {
-                self.expect(TokenType::Comma)?;
-            }
-            exprs.push(self.parse_expr(0)?);
-        }
-        Ok(exprs)
+        Ok(self.parse_trailing_comma_list(terminator, |s: &mut Self| {
+            Parser::parse_expr(s, 0)
+        })?)
     }
 
     fn parse_expr(
@@ -712,11 +723,19 @@ impl Parser {
                 self.open_scope();
                 let kwfn = self.cur_t.pos;
                 let oparen = self.expect(TokenType::OParen)?.pos;
-                let args = self.parse_fnarg_list()?;
+                let args = self.parse_trailing_comma_list(
+                    TokenType::CParen,
+                    Parser::parse_fnarg,
+                )?;
                 for arg in args.iter() {
                     self.scope_declare(arg.name.clone(), arg.pos)?;
                 }
                 let cparen = self.expect(TokenType::CParen)?.pos;
+                let ret_typ = if self.peek_t.typ == TokenType::Colon {
+                    Some(self.parse_type_annotation()?)
+                } else {
+                    None
+                };
                 let obrace = self.expect(TokenType::OBrace)?.pos;
                 self.func_depth += 1;
                 let body = self.parse_stmt_list(&[TokenType::CBrace])?;
@@ -727,6 +746,7 @@ impl Parser {
                     oparen,
                     args,
                     cparen,
+                    ret_typ,
                     obrace,
                     body,
                     cbrace,
@@ -751,7 +771,7 @@ impl Parser {
             TokenType::OSquare => {
                 Expr::LitArr {
                     osquare:  self.cur_t.pos,
-                    elements: self.parse_expr_list(vec![TokenType::CSquare])?,
+                    elements: self.parse_expr_list(TokenType::CSquare)?,
                     csquare:  self.expect(TokenType::CSquare)?.pos,
                 }
             }
@@ -790,7 +810,7 @@ impl Parser {
 
     fn parse_call(&mut self, expr: Expr) -> Result<Expr, SyntaxError> {
         let oparen = self.expect(TokenType::OParen)?.pos;
-        let args = self.parse_expr_list(vec![TokenType::CParen])?;
+        let args = self.parse_expr_list(TokenType::CParen)?;
         let cparen = self.expect(TokenType::CParen)?.pos;
         Ok(Expr::Call {
             expr: Box::from(expr),
@@ -800,23 +820,24 @@ impl Parser {
         })
     }
 
-    fn parse_fnarg_list(&mut self) -> Result<Vec<FnArg>, SyntaxError> {
-        let mut args = Vec::<FnArg>::with_capacity(1);
-        loop {
-            if self.peek_t.typ == TokenType::Ident {
-                self.advance()?;
-                args.push(FnArg {
-                    pos:  self.cur_t.pos,
-                    name: self.cur_t.lit.clone(),
-                })
-            }
-            if args.len() > 0 && self.peek_t.typ == TokenType::Comma {
-                self.advance()?;
-                continue;
-            }
-            break;
-        }
-        Ok(args)
+    fn parse_fnarg(&mut self) -> Result<FnArg, SyntaxError> {
+        self.expect(TokenType::Ident)?;
+        Ok(FnArg {
+            pos:  self.cur_t.pos,
+            name: self.cur_t.lit.clone(),
+            typ:  if self.peek_t.typ == TokenType::Colon {
+                Some(self.parse_type_annotation()?)
+            } else {
+                None
+            },
+        })
+    }
+
+    fn parse_type_annotation(&mut self) -> Result<TypeAnnotation, SyntaxError> {
+        Ok(TypeAnnotation {
+            colon: self.expect(TokenType::Colon)?.pos,
+            typ:   self.parse_type()?,
+        })
     }
 
     fn parse_ternary(&mut self, cond: Expr) -> Result<Expr, SyntaxError> {
@@ -849,51 +870,47 @@ impl Parser {
         })
     }
 
-    fn parse_field_list(&mut self) -> Result<Vec<ObjField>, SyntaxError> {
-        let mut fields = Vec::<ObjField>::new();
-        loop {
-            match self.peek_t.typ {
-                TokenType::CBrace => {
-                    break;
-                }
-                TokenType::OParen => {
-                    self.advance()?;
-                    fields.push(ObjField {
-                        key:   ObjKey::Dynamic(Box::new(Expr::Paren {
-                            oparen: self.cur_t.pos,
-                            expr:   Box::new(self.parse_expr(0)?),
-                            cparen: self.expect(TokenType::CParen)?.pos,
-                        })),
-                        colon: self.expect(TokenType::Colon)?.pos,
-                        val:   Box::new(self.parse_expr(0)?),
-                    });
-                }
-                TokenType::LitString | TokenType::Ident => {
-                    self.advance()?;
-                    fields.push(ObjField {
-                        key:   ObjKey::Static(
-                            self.cur_t.lit.clone(),
-                            self.cur_t.pos,
-                        ),
-                        colon: self.expect(TokenType::Colon)?.pos,
-                        val:   Box::new(self.parse_expr(0)?),
-                    });
-                }
-                _ => {
-                    return Err(SyntaxError::Expected {
-                        code:   self.lex.src.clone(),
-                        at:     self.peek_t.pos,
-                        wanted: "field key".into(),
-                        found:  format!("{}", self.peek_t.typ),
-                    })
-                }
+    fn parse_field_list(&mut self) -> Result<Vec<ObjLitField>, SyntaxError> {
+        Ok(self.parse_trailing_comma_list(
+            TokenType::CBrace,
+            Parser::parse_object_field,
+        )?)
+    }
+
+    fn parse_object_field(&mut self) -> Result<ObjLitField, SyntaxError> {
+        match self.peek_t.typ {
+            TokenType::OParen => {
+                self.advance()?;
+                return Ok(ObjLitField {
+                    key:   ObjKey::Dynamic(Box::new(Expr::Paren {
+                        oparen: self.cur_t.pos,
+                        expr:   Box::new(self.parse_expr(0)?),
+                        cparen: self.expect(TokenType::CParen)?.pos,
+                    })),
+                    colon: self.expect(TokenType::Colon)?.pos,
+                    val:   Box::new(self.parse_expr(0)?),
+                });
             }
-            if self.peek_t.typ == TokenType::CBrace {
-                break;
+            TokenType::LitString | TokenType::Ident => {
+                self.advance()?;
+                return Ok(ObjLitField {
+                    key:   ObjKey::Static(
+                        self.cur_t.lit.clone(),
+                        self.cur_t.pos,
+                    ),
+                    colon: self.expect(TokenType::Colon)?.pos,
+                    val:   Box::new(self.parse_expr(0)?),
+                });
             }
-            self.expect(TokenType::Comma)?;
+            _ => {
+                return Err(SyntaxError::Expected {
+                    code:   self.lex.src.clone(),
+                    at:     self.peek_t.pos,
+                    wanted: "field key".into(),
+                    found:  format!("{}", self.peek_t.typ),
+                })
+            }
         }
-        Ok(fields)
     }
 
     fn parse_ident(&mut self) -> Result<Ident, SyntaxError> {
@@ -901,6 +918,109 @@ impl Parser {
         Ok(Ident {
             name: tok.lit,
             pos:  tok.pos,
+        })
+    }
+
+    fn parse_type_item(&mut self) -> Result<Type, SyntaxError> {
+        match self.peek_t.typ {
+            TokenType::KwAny => {
+                return Ok(Type::Any {
+                    pos: self.expect(TokenType::KwAny)?.pos,
+                })
+            }
+            TokenType::Question => {
+                // TODO: this technically allows "???SomeType", which is
+                // redundant since a nullable nullable type is
+                // just itself. It is easier to allow that for
+                // now though since semantically it is easy
+                // to understand.
+                return Ok(Type::Null {
+                    question: self.expect(TokenType::Question)?.pos,
+                    element:  Box::new(self.parse_type()?),
+                });
+            }
+            TokenType::Ident => {
+                return Ok(Type::Named {
+                    ident: self.parse_ident()?,
+                })
+            }
+            TokenType::KwArray => {
+                return Ok(Type::Array {
+                    kwarray: self.expect(TokenType::KwArray)?.pos,
+                    osquare: self.expect(TokenType::OSquare)?.pos,
+                    element: Box::new(self.parse_type()?),
+                    csquare: self.expect(TokenType::CSquare)?.pos,
+                })
+            }
+            TokenType::KwMap => {
+                return Ok(Type::Map {
+                    kwmap:   self.expect(TokenType::KwMap)?.pos,
+                    osquare: self.expect(TokenType::OSquare)?.pos,
+                    element: Box::new(self.parse_type()?),
+                    csquare: self.expect(TokenType::CSquare)?.pos,
+                })
+            }
+            TokenType::KwFn => {
+                Ok(Type::Func {
+                    kwfn:   self.expect(TokenType::KwFn)?.pos,
+                    oparen: self.expect(TokenType::OParen)?.pos,
+                    args:   self.parse_trailing_comma_list(
+                        TokenType::CParen,
+                        Parser::parse_type,
+                    )?,
+                    cparen: self.expect(TokenType::CParen)?.pos,
+                    colon:  self.expect(TokenType::Colon)?.pos,
+                    ret:    Box::new(self.parse_type()?),
+                })
+            }
+            TokenType::OSquare => {
+                Ok(Type::Tuple {
+                    osquare: self.expect(TokenType::OSquare)?.pos,
+                    fields:  self.parse_trailing_comma_list(
+                        TokenType::CSquare,
+                        Parser::parse_type,
+                    )?,
+                    csquare: self.expect(TokenType::CSquare)?.pos,
+                })
+            }
+            TokenType::OBrace => {
+                Ok(Type::Object {
+                    obrace: self.expect(TokenType::OBrace)?.pos,
+                    fields: self.parse_trailing_comma_list(
+                        TokenType::CBrace,
+                        Parser::parse_object_type_field,
+                    )?,
+                    cbrace: self.expect(TokenType::CBrace)?.pos,
+                })
+            }
+            _ => {
+                return Err(SyntaxError::Expected {
+                    code:   self.lex.src.clone(),
+                    at:     self.cur_t.pos,
+                    wanted: "type".into(),
+                    found:  format!("{}", self.cur_t.typ),
+                })
+            }
+        }
+    }
+
+    fn parse_type(&mut self) -> Result<Type, SyntaxError> {
+        let mut items: Vec<Type> = vec![self.parse_type_item()?];
+        while self.peek_t.typ == TokenType::Bar {
+            self.expect(TokenType::Bar)?;
+            items.push(self.parse_type_item()?);
+        }
+        if items.len() == 1 {
+            return Ok(items.pop().unwrap());
+        }
+        return Ok(Type::Union { alts: items });
+    }
+
+    fn parse_object_type_field(&mut self) -> Result<ObjTypeField, SyntaxError> {
+        Ok(ObjTypeField {
+            key:   self.parse_ident()?,
+            colon: self.expect(TokenType::Colon)?.pos,
+            typ:   Box::new(self.parse_type()?),
         })
     }
 
@@ -925,6 +1045,24 @@ impl Parser {
         }
         Ok(self.cur_t.clone())
     }
+
+    fn parse_trailing_comma_list<T>(
+        &mut self,
+        terminator: TokenType,
+        mut f: impl FnMut(&mut Self) -> Result<T, SyntaxError>,
+    ) -> Result<Vec<T>, SyntaxError> {
+        let mut list = Vec::<T>::new();
+        while self.peek_t.typ != terminator {
+            if list.len() > 0 {
+                self.expect(TokenType::Comma)?;
+            }
+            if self.peek_t.typ == terminator {
+                break;
+            }
+            list.push(f(self)?);
+        }
+        Ok(list)
+    }
 }
 
 #[cfg(test)]
@@ -933,6 +1071,8 @@ mod test {
         ast::{
             Expr,
             Ident,
+            ObjTypeField,
+            Type,
         },
         token::TokenType,
     };
@@ -966,6 +1106,7 @@ mod test {
             vec![$(crate::ast::FnArg {
                 pos: $pos,
                 name: string!($name),
+                typ: None
             }),*]
         };
     }
@@ -976,6 +1117,16 @@ mod test {
             let mut parser = crate::parser::Parser::new(&src, false, vec![]);
             parser.advance().expect("failed to parse first token");
             let got = parser.parse_expr(0).unwrap();
+            assert_eq!($want, got);
+        }};
+    }
+
+    macro_rules! assert_type {
+        ($src:expr, $want:expr) => {{
+            let src = crate::source::Code::from($src);
+            let mut parser = crate::parser::Parser::new(&src, false, vec![]);
+            parser.advance().expect("failed to parse first token");
+            let got = parser.parse_type().unwrap();
             assert_eq!($want, got);
         }};
     }
@@ -1109,6 +1260,119 @@ mod test {
     }
 
     #[test]
+    fn test_types() {
+        assert_type!("named", Type::Named {
+            ident: Ident {
+                pos:  pos!(0, 5),
+                name: string!("named"),
+            },
+        });
+        assert_type!("?named", Type::Null {
+            question: pos!(0, 1),
+            element:  Box::new(Type::Named {
+                ident: Ident {
+                    pos:  pos!(1, 5),
+                    name: string!("named"),
+                },
+            }),
+        });
+        assert_type!("a|b|c", Type::Union {
+            alts: vec![
+                Type::Named {
+                    ident: Ident {
+                        pos:  pos!(0, 1),
+                        name: string!("a"),
+                    },
+                },
+                Type::Named {
+                    ident: Ident {
+                        pos:  pos!(2, 1),
+                        name: string!("b"),
+                    },
+                },
+                Type::Named {
+                    ident: Ident {
+                        pos:  pos!(4, 1),
+                        name: string!("c"),
+                    },
+                }
+            ],
+        });
+        assert_type!("[a, b]", Type::Tuple {
+            osquare: pos!(0, 1),
+            fields:  vec![
+                Type::Named {
+                    ident: Ident {
+                        pos:  pos!(1, 1),
+                        name: string!("a"),
+                    },
+                },
+                Type::Named {
+                    ident: Ident {
+                        pos:  pos!(4, 1),
+                        name: string!("b"),
+                    },
+                }
+            ],
+            csquare: pos!(5, 1),
+        });
+        assert_type!("{a: a, b: b}", Type::Object {
+            obrace: pos!(0, 1),
+            fields: vec![
+                ObjTypeField {
+                    key:   Ident {
+                        pos:  pos!(1, 1),
+                        name: string!("a"),
+                    },
+                    colon: pos!(2, 1),
+                    typ:   Box::new(Type::Named {
+                        ident: Ident {
+                            pos:  pos!(4, 1),
+                            name: string!("a"),
+                        },
+                    }),
+                },
+                ObjTypeField {
+                    key:   Ident {
+                        pos:  pos!(7, 1),
+                        name: string!("b"),
+                    },
+                    colon: pos!(8, 1),
+                    typ:   Box::new(Type::Named {
+                        ident: Ident {
+                            pos:  pos!(10, 1),
+                            name: string!("b"),
+                        },
+                    }),
+                }
+            ],
+            cbrace: pos!(11, 1),
+        });
+        assert_type!("array[a]", Type::Array {
+            kwarray: pos!(0, 5),
+            osquare: pos!(5, 1),
+            element: Box::new(Type::Named {
+                ident: Ident {
+                    pos:  pos!(6, 1),
+                    name: string!("a"),
+                },
+            }),
+            csquare: pos!(7, 1),
+        });
+        assert_type!("map[a]", Type::Map {
+            kwmap:   pos!(0, 3),
+            osquare: pos!(3, 1),
+            element: Box::new(Type::Named {
+                ident: Ident {
+                    pos:  pos!(4, 1),
+                    name: string!("a"),
+                },
+            }),
+            csquare: pos!(5, 1),
+        });
+    }
+
+    #[test]
     fn test_expressions() {
         assert_expr!("1", Expr::LitInt {
             pos: pos!(0, 1),
@@ -1160,6 +1424,7 @@ mod test {
             oparen:     pos!(3),
             args:       args!(),
             cparen:     pos!(4),
+            ret_typ:    None,
             obrace:     pos!(6),
             body:       vec![],
             cbrace:     pos!(7),
@@ -1174,6 +1439,7 @@ mod test {
                 "c" => pos!(10)
             ),
             cparen:     pos!(11),
+            ret_typ:    None,
             obrace:     pos!(13),
             body:       vec![],
             cbrace:     pos!(14),

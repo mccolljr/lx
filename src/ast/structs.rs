@@ -1,5 +1,6 @@
 use super::expr::Expr;
 use super::stmt::Stmt;
+use super::types::Type;
 
 use crate::source::Pos;
 use crate::token::TokenType;
@@ -18,6 +19,12 @@ pub struct Ident {
 
 impl Display for Ident {
     fn fmt(&self, f: &mut Formatter) -> FmtResult { write!(f, "{}", self.name) }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeAnnotation {
+    pub colon: Pos,
+    pub typ:   Type,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -63,17 +70,17 @@ pub struct FinallyBlock {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum VDeclTarget {
+pub enum LetDeclTarget {
     Ident(Ident),
     ArrDestruct(Vec<String>),
     ObjDestruct(Vec<ObjDestructItem>),
 }
 
-impl Display for VDeclTarget {
+impl Display for LetDeclTarget {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         match self {
-            VDeclTarget::Ident(ident) => write!(f, "{}", ident),
-            VDeclTarget::ArrDestruct(items) => {
+            LetDeclTarget::Ident(ident) => write!(f, "{}", ident),
+            LetDeclTarget::ArrDestruct(items) => {
                 write!(f, "[")?;
                 for (i, item) in items.iter().enumerate() {
                     if i > 0 {
@@ -83,7 +90,7 @@ impl Display for VDeclTarget {
                 }
                 write!(f, "]")
             }
-            VDeclTarget::ObjDestruct(items) => {
+            LetDeclTarget::ObjDestruct(items) => {
                 write!(f, "{{")?;
                 for (i, item) in items.iter().enumerate() {
                     if i > 0 {
@@ -118,6 +125,7 @@ impl Display for ObjDestructItem {
 pub struct FnArg {
     pub pos:  Pos,
     pub name: String,
+    pub typ:  Option<TypeAnnotation>,
 }
 
 impl Display for FnArg {
@@ -125,13 +133,20 @@ impl Display for FnArg {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct ObjField {
+pub struct ObjLitField {
     pub key:   ObjKey,
     pub colon: Pos,
     pub val:   Box<Expr>,
 }
 
-impl Display for ObjField {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ObjTypeField {
+    pub key:   Ident,
+    pub colon: Pos,
+    pub typ:   Box<Type>,
+}
+
+impl Display for ObjLitField {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         write!(f, "{}: {}", self.key, self.val)
     }

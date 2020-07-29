@@ -1,10 +1,12 @@
 use itertools::sorted;
 
-use super::structs::Ident;
+use super::structs::{
+    Ident,
+    ObjTypeField,
+};
 
 use crate::source::Pos;
 
-use std::collections::HashMap;
 use std::fmt::{
     Display,
     Formatter,
@@ -18,15 +20,15 @@ pub enum Type {
     },
     Null {
         question: Pos,
-        inner:    Box<Type>,
+        element:  Box<Type>,
     },
     Named {
         ident: Ident,
     },
     Object {
-        obrace:   Pos,
-        elements: HashMap<String, Type>,
-        cbrace:   Pos,
+        obrace: Pos,
+        fields: Vec<ObjTypeField>,
+        cbrace: Pos,
     },
     Map {
         kwmap:   Pos,
@@ -35,9 +37,9 @@ pub enum Type {
         csquare: Pos,
     },
     Tuple {
-        osquare:  Pos,
-        elements: Vec<Type>,
-        csquare:  Pos,
+        osquare: Pos,
+        fields:  Vec<Type>,
+        csquare: Pos,
     },
     Array {
         kwarray: Pos,
@@ -45,28 +47,41 @@ pub enum Type {
         element: Box<Type>,
         csquare: Pos,
     },
+    Union {
+        alts: Vec<Type>,
+    },
+    Func {
+        kwfn:   Pos,
+        oparen: Pos,
+        args:   Vec<Type>,
+        cparen: Pos,
+        colon:  Pos,
+        ret:    Box<Type>,
+    },
 }
 
 impl Display for Type {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         match self {
             Type::Any { .. } => write!(f, "any"),
-            Type::Null { inner, .. } => write!(f, "?{}", inner),
+            Type::Null { element, .. } => write!(f, "?{}", element),
             Type::Named { ident, .. } => write!(f, "{}", ident),
-            Type::Object { elements, .. } => {
+            Type::Object { fields, .. } => {
                 write!(f, "{{")?;
-                for (i, key) in sorted(elements.keys()).enumerate() {
+                for (i, ObjTypeField { key, typ, .. }) in
+                    fields.iter().enumerate()
+                {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{}: {}", key, elements.get(key).unwrap())?;
+                    write!(f, "{}: {}", key, typ)?;
                 }
                 write!(f, "}}")
             }
             Type::Map { element, .. } => write!(f, "map[{}]", element),
-            Type::Tuple { elements, .. } => {
+            Type::Tuple { fields, .. } => {
                 write!(f, "[")?;
-                for (i, elt) in elements.iter().enumerate() {
+                for (i, elt) in fields.iter().enumerate() {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
@@ -75,6 +90,25 @@ impl Display for Type {
                 write!(f, "]")
             }
             Type::Array { element, .. } => write!(f, "array[{}]", element),
+            Type::Union { alts } => {
+                for (i, alt) in alts.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, " | ")?;
+                    }
+                    write!(f, "{}", alt)?;
+                }
+                Ok(())
+            }
+            Type::Func { args, ret, .. } => {
+                write!(f, "fn (")?;
+                for (i, arg) in args.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", arg)?;
+                }
+                write!(f, "): {}", ret)
+            }
         }
     }
 }

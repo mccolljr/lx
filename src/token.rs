@@ -42,6 +42,7 @@ pub enum TokenType {
     Question,
     Colon,
     Dot,
+    Bar,
 
     OParen,
     CParen,
@@ -62,7 +63,7 @@ pub enum TokenType {
     OpLt,
     OpGt,
 
-    KwVDecl,
+    KwLetDecl,
     KwFn,
     KwIf,
     KwElif,
@@ -106,6 +107,7 @@ impl Display for TokenType {
             Question => write!(f, "?"),
             Colon => write!(f, ":"),
             Dot => write!(f, "."),
+            Bar => write!(f, "|"),
             OParen => write!(f, "("),
             CParen => write!(f, ")"),
             OBrace => write!(f, "{{"),
@@ -123,7 +125,7 @@ impl Display for TokenType {
             OpGeq => write!(f, ">="),
             OpLt => write!(f, "<"),
             OpGt => write!(f, ">"),
-            KwVDecl => write!(f, "let"),
+            KwLetDecl => write!(f, "let"),
             KwFn => write!(f, "fn"),
             KwIf => write!(f, "if"),
             KwElif => write!(f, "elif"),

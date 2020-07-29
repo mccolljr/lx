@@ -14,6 +14,7 @@ mod parser;
 mod runtime;
 mod source;
 mod token;
+mod typecheck;
 
 #[cfg(test)]
 mod tests;

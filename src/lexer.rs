@@ -69,6 +69,7 @@ impl Lexer {
             '?' => self.lex_1(Question),
             ':' => self.lex_1(Colon),
             '.' => self.lex_1(Dot),
+            '|' => self.lex_1(Bar),
             '>' => self.lex_2(&[('=', OpGeq)], OpGt),
             '<' => self.lex_2(&[('=', OpLeq)], OpLt),
             '=' => self.lex_2(&[('=', OpEq)], Assign),
@@ -261,7 +262,7 @@ impl Lexer {
                 "true" => KwTrue,
                 "false" => KwFalse,
                 // keywords
-                "let" => KwVDecl,
+                "let" => KwLetDecl,
                 "fn" => KwFn,
                 "if" => KwIf,
                 "elif" => KwElif,

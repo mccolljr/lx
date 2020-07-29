@@ -2,9 +2,9 @@ use crate::ast::{
     AssignTarget,
     Expr,
     FnArg,
+    LetDeclTarget,
     ObjKey,
     Stmt,
-    VDeclTarget,
 };
 use crate::error::Error;
 use crate::parser::Parser;
@@ -24,21 +24,21 @@ fn compile_stmt(insts: &mut Vec<Inst>, stmt: Stmt) {
             compile_expr(insts, *expr);
             insts.push(Inst::StackPop);
         }
-        Stmt::VDecl { target, expr, .. } => {
+        Stmt::LetDecl { target, expr, .. } => {
             compile_expr(insts, *expr);
             match target {
-                VDeclTarget::Ident(ident) => {
+                LetDeclTarget::Ident(ident) => {
                     insts.push(Inst::ScopeDefine(ident.name));
                 }
-                VDeclTarget::ArrDestruct(names) => {
+                LetDeclTarget::ArrDestruct(names) => {
                     insts.push(Inst::DestructureArray(Rc::from(names)));
                 }
-                VDeclTarget::ObjDestruct(items) => {
+                LetDeclTarget::ObjDestruct(items) => {
                     insts.push(Inst::DestructureObject(Rc::from(items)));
                 }
             }
         }
-        Stmt::FDecl {
+        Stmt::FnDecl {
             name,
             args,
             body,
@@ -54,7 +54,7 @@ fn compile_stmt(insts: &mut Vec<Inst>, stmt: Stmt) {
             );
             insts.push(Inst::ScopeDefine(name.name));
         }
-        Stmt::TDecl { .. } => { /* don't compile types */ }
+        Stmt::TypeDecl { .. } => { /* don't compile types */ }
         Stmt::Assignment { target, rhs, .. } => {
             match target {
                 AssignTarget::Ident(ident) => {

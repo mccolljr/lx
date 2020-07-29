@@ -7,8 +7,9 @@ use super::structs::{
     FnArg,
     Ident,
     IfBlock,
+    LetDeclTarget,
     TryBlock,
-    VDeclTarget,
+    TypeAnnotation,
 };
 use super::types::Type;
 
@@ -22,26 +23,28 @@ use std::fmt::{
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
-    VDecl {
+    LetDecl {
         kwlet:      Pos,
-        target:     VDeclTarget,
+        target:     LetDeclTarget,
         target_pos: Pos,
+        annotation: Option<TypeAnnotation>,
         assign:     Pos,
         expr:       Box<Expr>,
         semi:       Pos,
     },
-    FDecl {
+    FnDecl {
         kwfn:       Pos,
         name:       Ident,
         oparen:     Pos,
         args:       Vec<FnArg>,
         cparen:     Pos,
+        ret_typ:    Option<TypeAnnotation>,
         obrace:     Pos,
         body:       Vec<Stmt>,
         cbrace:     Pos,
         is_closure: bool,
     },
-    TDecl {
+    TypeDecl {
         kwtype: Pos,
         name:   Ident,
         assign: Pos,
@@ -107,10 +110,10 @@ pub enum Stmt {
 impl Display for Stmt {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         match self {
-            Stmt::VDecl { target, expr, .. } => {
+            Stmt::LetDecl { target, expr, .. } => {
                 write!(f, "let {} = {};", target, expr)
             }
-            Stmt::FDecl {
+            Stmt::FnDecl {
                 name, args, body, ..
             } => {
                 write!(f, "fn {} (", name.name)?;
@@ -126,7 +129,7 @@ impl Display for Stmt {
                 }
                 write!(f, "\n}}")
             }
-            Stmt::TDecl { name, typ, .. } => {
+            Stmt::TypeDecl { name, typ, .. } => {
                 write!(f, "type {} = {};", name, typ)
             }
             Stmt::Assignment { target, rhs, .. } => {

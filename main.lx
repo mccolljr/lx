@@ -1,0 +1,8 @@
+let a: str = "abc";
+let b: [str] = ["abc"];
+let c: array[str] = ["a", "b", "c"];
+let d: {x: str} = {x: "abc"};
+let e: map[str] = {a: "a", b: "b", c: "c"};
+let f: fn(str): any = fn(a: str): any { return null; };
+let g: ?str = null;
+let h: str | int | ?map[str] = 12;

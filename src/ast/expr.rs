@@ -4,7 +4,8 @@ use super::structs::{
     AssignTarget,
     FnArg,
     Ident,
-    ObjField,
+    ObjLitField,
+    TypeAnnotation,
 };
 
 use crate::source::Pos;
@@ -44,7 +45,7 @@ pub enum Expr {
     },
     LitObj {
         obrace: Pos,
-        fields: Vec<ObjField>,
+        fields: Vec<ObjLitField>,
         cbrace: Pos,
     },
     LitFunc {
@@ -52,6 +53,7 @@ pub enum Expr {
         oparen:     Pos,
         args:       Vec<FnArg>,
         cparen:     Pos,
+        ret_typ:    Option<TypeAnnotation>,
         obrace:     Pos,
         body:       Vec<Stmt>,
         cbrace:     Pos,
