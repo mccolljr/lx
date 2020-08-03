@@ -49,6 +49,7 @@ pub enum Stmt {
         name:   Ident,
         assign: Pos,
         typ:    Box<Type>,
+        semi:   Pos,
     },
     Assignment {
         target_pos: Pos,

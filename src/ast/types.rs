@@ -1,5 +1,3 @@
-use itertools::sorted;
-
 use super::structs::{
     Ident,
     ObjTypeField,
@@ -16,9 +14,24 @@ use std::fmt::{
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
     Any {
-        pos: Pos,
+        kwany: Pos,
+    },
+    Int {
+        kwint: Pos,
+    },
+    Float {
+        kwfloat: Pos,
+    },
+    Bool {
+        kwbool: Pos,
+    },
+    Str {
+        kwstr: Pos,
     },
     Null {
+        kwnull: Pos,
+    },
+    Nullable {
         question: Pos,
         element:  Box<Type>,
     },
@@ -64,7 +77,12 @@ impl Display for Type {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         match self {
             Type::Any { .. } => write!(f, "any"),
-            Type::Null { element, .. } => write!(f, "?{}", element),
+            Type::Int { .. } => write!(f, "int"),
+            Type::Float { .. } => write!(f, "float"),
+            Type::Bool { .. } => write!(f, "bool"),
+            Type::Str { .. } => write!(f, "str"),
+            Type::Null { .. } => write!(f, "null"),
+            Type::Nullable { element, .. } => write!(f, "?{}", element),
             Type::Named { ident, .. } => write!(f, "{}", ident),
             Type::Object { fields, .. } => {
                 write!(f, "{{")?;

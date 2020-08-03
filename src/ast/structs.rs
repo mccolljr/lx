@@ -11,7 +11,7 @@ use std::fmt::{
     Result as FmtResult,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Ord, PartialOrd, Hash)]
 pub struct Ident {
     pub pos:  Pos,
     pub name: String,

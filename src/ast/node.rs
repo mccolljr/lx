@@ -11,9 +11,14 @@ pub trait Node {
 impl Node for Type {
     fn pos(&self) -> Pos {
         match self {
-            Type::Any { pos } => *pos,
+            Type::Any { kwany } => *kwany,
+            Type::Int { kwint } => *kwint,
+            Type::Float { kwfloat } => *kwfloat,
+            Type::Bool { kwbool } => *kwbool,
+            Type::Str { kwstr } => *kwstr,
+            Type::Null { kwnull } => *kwnull,
             Type::Named { ident } => ident.pos,
-            Type::Null { question, element } => {
+            Type::Nullable { question, element } => {
                 let start = question.offset;
                 let endpos = element.pos();
                 let end = endpos.offset + endpos.length;
@@ -73,10 +78,9 @@ impl Node for Stmt {
                 let end = cbrace.offset + cbrace.length;
                 Pos::span(start, end - start)
             }
-            Stmt::TypeDecl { kwtype, typ, .. } => {
+            Stmt::TypeDecl { kwtype, semi, .. } => {
                 let start = kwtype.offset;
-                let endpos = typ.pos();
-                let end = endpos.offset + endpos.length;
+                let end = semi.offset + semi.length;
                 Pos::span(start, end - start)
             }
             Stmt::Assignment {

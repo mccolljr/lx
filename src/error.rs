@@ -31,6 +31,13 @@ quick_error! {
         Undeclared{code: Code, at: Pos, name: String} {
             display("use of undeclared variable '{}' at {}", name, code.describe(*at))
         }
+        TypeRedeclaration{code: Code, at: Pos, original: Pos, name: String} {
+            display("redeclaration of type '{}' at {} (original declaration is at {})",
+                    name, code.describe(*at), code.describe(*original))
+        }
+        TypeUndeclared{code: Code, at: Pos, name: String} {
+            display("use of undeclared type '{}' at {}", name, code.describe(*at))
+        }
         NotAllowed{code: Code, at: Pos, what: String} {
             display("{} at {}", what, code.describe(*at))
         }

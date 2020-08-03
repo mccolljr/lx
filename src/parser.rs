@@ -33,9 +33,10 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 struct ParseScope {
-    parent:   Option<Rc<ParseScope>>,
-    decls:    RefCell<HashMap<String, Pos>>,
-    captures: RefCell<Vec<String>>,
+    parent:     Option<Rc<ParseScope>>,
+    decls:      RefCell<HashMap<String, Pos>>,
+    type_decls: RefCell<HashMap<String, Pos>>,
+    captures:   RefCell<Vec<String>>,
 }
 
 impl ParseScope {
@@ -43,6 +44,7 @@ impl ParseScope {
         Rc::from(ParseScope {
             parent,
             decls: RefCell::new(HashMap::new()),
+            type_decls: RefCell::new(HashMap::new()),
             captures: RefCell::new(Vec::new()),
         })
     }
@@ -51,11 +53,23 @@ impl ParseScope {
         self.decls.borrow().get(name).map(|pos| *pos)
     }
 
+    fn get_local_type_decl(&self, name: &String) -> Option<Pos> {
+        self.type_decls.borrow().get(name).map(|pos| *pos)
+    }
+
     fn declare(&self, name: String, at: Pos) -> Option<Pos> {
         if let Some(original) = self.get_local_decl(&name) {
             return Some(original);
         }
         self.decls.borrow_mut().insert(name.clone(), at);
+        None
+    }
+
+    fn declare_type(&self, name: String, at: Pos) -> Option<Pos> {
+        if let Some(original) = self.get_local_type_decl(&name) {
+            return Some(original);
+        }
+        self.type_decls.borrow_mut().insert(name.clone(), at);
         None
     }
 
@@ -75,6 +89,21 @@ impl ParseScope {
             // and we need to capture the name
             self.captures.borrow_mut().push(name.clone());
             return true;
+        }
+
+        return false;
+    }
+
+    fn utilize_type(&self, name: &String) -> bool {
+        if self.get_local_type_decl(name).is_some() {
+            // found in local scope
+            return true;
+        }
+
+        if let Some(parent) = &self.parent {
+            if parent.utilize_type(name) {
+                return true;
+            }
         }
 
         return false;
@@ -152,6 +181,24 @@ impl Parser {
         Ok(())
     }
 
+    fn scope_declare_type(
+        &mut self,
+        name: String,
+        pos: Pos,
+    ) -> Result<(), SyntaxError> {
+        if let Some(scope) = &self.scope {
+            if let Some(orig_decl_pos) = scope.declare_type(name.clone(), pos) {
+                return Err(SyntaxError::TypeRedeclaration {
+                    code: self.lex.src.clone(),
+                    at: pos,
+                    original: orig_decl_pos,
+                    name,
+                });
+            }
+        }
+        Ok(())
+    }
+
     fn scope_use(
         &mut self,
         name: &String,
@@ -169,11 +216,29 @@ impl Parser {
         Ok(())
     }
 
+    fn scope_use_type(
+        &mut self,
+        name: &String,
+        pos: Pos,
+    ) -> Result<(), SyntaxError> {
+        if let Some(scope) = &self.scope {
+            if !scope.utilize_type(name) {
+                return Err(SyntaxError::TypeUndeclared {
+                    code: self.lex.src.clone(),
+                    at:   pos,
+                    name: name.clone(),
+                });
+            }
+        }
+        Ok(())
+    }
+
     fn scope_is_closure(&mut self) -> bool {
         if let Some(scope) = &self.scope {
             return !scope.captures.borrow().is_empty();
         }
-        true // if we're not tracking scope, assume every scope is a closure
+        // If we're not tracking scope, treat every scope as a closure.
+        return true;
     }
 
     pub fn parse_stmt_list(
@@ -189,7 +254,7 @@ impl Parser {
 
     fn parse_stmt(&mut self) -> Result<Stmt, SyntaxError> {
         match self.peek_t.typ {
-            TokenType::KwLetDecl => self.parse_let_stmt(),
+            TokenType::KwLet => self.parse_let_stmt(),
             TokenType::KwFn => self.parse_fndef_stmt(),
             TokenType::KwIf => self.parse_if_stmt(),
             TokenType::KwWhile => self.parse_while_stmt(),
@@ -236,12 +301,13 @@ impl Parser {
             }
             TokenType::KwThrow => self.parse_throw_stmt(),
             TokenType::KwTry => self.parse_try_stmt(),
+            TokenType::KwType => self.parse_type_stmt(),
             _ => self.parse_expr_or_assignment_stmt(),
         }
     }
 
     fn parse_let_stmt(&mut self) -> Result<Stmt, SyntaxError> {
-        self.expect(TokenType::KwLetDecl)?;
+        self.expect(TokenType::KwLet)?;
         let kwlet = self.cur_t.pos;
         let (target, target_pos) = self.parse_let_target()?;
         let annotation = if self.peek_t.typ == TokenType::Colon {
@@ -597,6 +663,22 @@ impl Parser {
         Ok(finally_block)
     }
 
+    fn parse_type_stmt(&mut self) -> Result<Stmt, SyntaxError> {
+        let kwtype = self.expect(TokenType::KwType)?.pos;
+        let name = self.parse_ident()?;
+        self.scope_declare_type(name.name.clone(), name.pos)?;
+        let assign = self.expect(TokenType::Assign)?.pos;
+        let typ = Box::new(self.parse_type()?);
+        let semi = self.expect(TokenType::Semi)?.pos;
+        Ok(Stmt::TypeDecl {
+            kwtype,
+            name,
+            assign,
+            typ,
+            semi,
+        })
+    }
+
     fn parse_expr_or_assignment_stmt(&mut self) -> Result<Stmt, SyntaxError> {
         let x = self.parse_expr(0)?;
         if self.peek_t.typ == TokenType::Assign {
@@ -925,7 +1007,32 @@ impl Parser {
         match self.peek_t.typ {
             TokenType::KwAny => {
                 return Ok(Type::Any {
-                    pos: self.expect(TokenType::KwAny)?.pos,
+                    kwany: self.expect(TokenType::KwAny)?.pos,
+                })
+            }
+            TokenType::KwInt => {
+                return Ok(Type::Int {
+                    kwint: self.expect(TokenType::KwInt)?.pos,
+                })
+            }
+            TokenType::KwFloat => {
+                return Ok(Type::Float {
+                    kwfloat: self.expect(TokenType::KwFloat)?.pos,
+                })
+            }
+            TokenType::KwBool => {
+                return Ok(Type::Bool {
+                    kwbool: self.expect(TokenType::KwBool)?.pos,
+                })
+            }
+            TokenType::KwStr => {
+                return Ok(Type::Str {
+                    kwstr: self.expect(TokenType::KwStr)?.pos,
+                })
+            }
+            TokenType::KwNull => {
+                return Ok(Type::Null {
+                    kwnull: self.expect(TokenType::KwNull)?.pos,
                 })
             }
             TokenType::Question => {
@@ -934,15 +1041,15 @@ impl Parser {
                 // just itself. It is easier to allow that for
                 // now though since semantically it is easy
                 // to understand.
-                return Ok(Type::Null {
+                return Ok(Type::Nullable {
                     question: self.expect(TokenType::Question)?.pos,
                     element:  Box::new(self.parse_type()?),
                 });
             }
             TokenType::Ident => {
-                return Ok(Type::Named {
-                    ident: self.parse_ident()?,
-                })
+                let ident = self.parse_ident()?;
+                self.scope_use_type(&ident.name, ident.pos)?;
+                return Ok(Type::Named { ident });
             }
             TokenType::KwArray => {
                 return Ok(Type::Array {
@@ -1267,7 +1374,7 @@ mod test {
                 name: string!("named"),
             },
         });
-        assert_type!("?named", Type::Null {
+        assert_type!("?named", Type::Nullable {
             question: pos!(0, 1),
             element:  Box::new(Type::Named {
                 ident: Ident {

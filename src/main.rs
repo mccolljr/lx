@@ -1,4 +1,10 @@
-#![feature(unsize, coerce_unsized, try_trait, option_expect_none)]
+#![feature(
+    unsize,
+    coerce_unsized,
+    try_trait,
+    option_expect_none,
+    map_first_last
+)]
 
 #[macro_use]
 extern crate quick_error;
