@@ -333,8 +333,7 @@ fn compile_for_loop(var: String, stmts: Vec<Stmt>, on_break: usize) -> Inst {
     };
 }
 
-pub fn compile(src: Code, globals: Vec<String>) -> Result<Vec<Inst>, Error> {
-    let stmts = Parser::parse_file(&src, true, globals)?;
+pub fn compile(stmts: Vec<Stmt>) -> Result<Vec<Inst>, Error> {
     let mut insts = Vec::<Inst>::new();
     for stmt in stmts {
         compile_stmt(&mut insts, stmt);

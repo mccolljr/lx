@@ -5,6 +5,7 @@ use crate::error::{
     Panic,
     RuntimeError,
 };
+use crate::parser::Parser;
 use crate::runtime::builtin::{
     builtins,
     extend_builtins,
@@ -46,18 +47,20 @@ impl VM {
         };
 
         let code = Code::from(src.into());
-        let insts = Rc::from(compile(
-            code,
+        let stmts = Parser::parse_file(
+            &code,
+            true,
             global_values.keys().map(String::clone).collect(),
-        )?);
-        let root_scope = Rc::from(Scope::new(None));
+        )?;
+        let insts = Rc::from(compile(stmts)?);
+        let globals = Rc::from(Scope::new(None));
         for (k, v) in global_values {
-            root_scope.declare(k, v);
+            globals.declare(k, v);
         }
         let v = VM {
             state: Rc::new(VMState {
                 stack: RefCell::new(Vec::with_capacity(2048)),
-                root_scope,
+                globals,
                 insts,
                 imports: RefCell::new(HashMap::new()),
             }),
@@ -68,7 +71,7 @@ impl VM {
     fn run(&self) -> Result<(), Error> {
         match self.state.run_frame(Frame::new(
             Rc::clone(&self.state.insts),
-            Rc::new(Scope::new(Some(Rc::clone(&self.state.root_scope)))),
+            Rc::new(Scope::new(Some(Rc::clone(&self.state.globals)))),
             0,
         )) {
             FrameStatus::Excepted(err) => Err(err),
@@ -79,10 +82,10 @@ impl VM {
 
 #[derive(Debug)]
 pub struct VMState {
-    stack:      RefCell<Vec<Value>>,
-    root_scope: Rc<Scope>,
-    insts:      Rc<[Inst]>,
-    imports:    RefCell<HashMap<String, Object>>,
+    stack:   RefCell<Vec<Value>>,
+    globals: Rc<Scope>,
+    insts:   Rc<[Inst]>,
+    imports: RefCell<HashMap<String, Object>>,
 }
 
 impl VMState {
@@ -112,14 +115,12 @@ impl VMState {
         if let Some(existing) = self.imports.borrow().get(&path) {
             return Ok(Value::Object(existing.clone()));
         }
-        let insts: Rc<[Inst]> = Rc::from(compile(
-            Code::from(
-                std::fs::read_to_string(&path).expect("unable to import"),
-            ),
-            self.root_scope.names(),
-        )?);
-        let import_scope =
-            Rc::new(Scope::new(Some(Rc::clone(&self.root_scope))));
+        let code = Code::from(
+            std::fs::read_to_string(&path).expect("unable to import"),
+        );
+        let stmts = Parser::parse_file(&code, true, self.globals.names())?;
+        let insts = Rc::from(compile(stmts)?);
+        let import_scope = Rc::new(Scope::new(Some(Rc::clone(&self.globals))));
         match self.run_frame(Frame::new(insts, import_scope.clone(), 0)) {
             FrameStatus::Excepted(err) => return Err(err),
             FrameStatus::Ended => { /* all good */ }

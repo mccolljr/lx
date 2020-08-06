@@ -4,13 +4,16 @@ use itertools;
 
 use crate::ast::{
     Expr,
+    FnArg,
     Ident,
     LetDeclTarget,
+    ObjDestructItem,
     ObjKey,
     ObjLitField,
     ObjTypeField,
     Stmt,
     Type,
+    TypeAnnotation,
 };
 use crate::token::TokenType;
 
@@ -268,6 +271,7 @@ struct Scope {
     parent:     Option<Rc<Scope>>,
     decls:      RefCell<BTreeMap<String, TypeSpec>>,
     type_decls: RefCell<BTreeMap<String, TypeSpec>>,
+    returns:    Option<TypeSpec>,
 }
 
 impl Scope {
@@ -276,6 +280,7 @@ impl Scope {
             parent:     None,
             decls:      RefCell::new(BTreeMap::new()),
             type_decls: RefCell::new(BTreeMap::new()),
+            returns:    None,
         })
     }
 
@@ -284,6 +289,16 @@ impl Scope {
             parent:     Some(Rc::clone(self)),
             decls:      RefCell::new(BTreeMap::new()),
             type_decls: RefCell::new(BTreeMap::new()),
+            returns:    None,
+        })
+    }
+
+    fn extend_return(self: &Rc<Self>, returns: TypeSpec) -> Rc<Self> {
+        Rc::new(Scope {
+            parent:     Some(Rc::clone(self)),
+            decls:      RefCell::new(BTreeMap::new()),
+            type_decls: RefCell::new(BTreeMap::new()),
+            returns:    Some(returns),
         })
     }
 
@@ -295,12 +310,13 @@ impl Scope {
     }
 
     fn lookup_type(self: &Rc<Self>, name: &String) -> TypeSpec {
-        return self
-            .type_decls
-            .borrow()
-            .get(name)
-            .expect("type checker encountered undeclared type")
-            .clone();
+        if let Some(typespec) = self.type_decls.borrow().get(name) {
+            return typespec.clone();
+        }
+        if let Some(parent) = self.parent.as_ref() {
+            return parent.lookup_type(name);
+        }
+        unreachable!("type checker encountered undeclared type");
     }
 
     fn declare_var(self: &Rc<Self>, name: String, spec: TypeSpec) {
@@ -311,12 +327,13 @@ impl Scope {
     }
 
     fn lookup_var(self: &Rc<Self>, name: &String) -> TypeSpec {
-        return self
-            .type_decls
-            .borrow()
-            .get(name)
-            .expect("type checker encountered undeclared variable")
-            .clone();
+        if let Some(typespec) = self.decls.borrow().get(name) {
+            return typespec.clone();
+        }
+        if let Some(parent) = self.parent.as_ref() {
+            return parent.lookup_var(name);
+        }
+        unreachable!("type checker encountered undeclared variable");
     }
 }
 
@@ -329,6 +346,16 @@ impl Checker {
         Checker {
             scope: Scope::new(),
         }
+    }
+
+    fn open_scope(&mut self) { self.scope = Scope::extend(&self.scope); }
+
+    fn open_fn_scope(&mut self, returns: TypeSpec) {
+        self.scope = Scope::extend_return(&self.scope, returns);
+    }
+
+    fn close_scope(&mut self) {
+        self.scope = self.scope.parent.as_ref().unwrap().clone()
     }
 
     fn from_ast(&mut self, src: &Type) -> TypeSpec {
@@ -387,6 +414,84 @@ impl Checker {
             Type::Union { alts, .. } => {
                 TypeSpec::union_of(alts.iter().map(|t| self.from_ast(t)))
             }
+        }
+    }
+
+    fn check_assign(
+        &mut self,
+        src: &TypeSpec,
+        target: &TypeSpec,
+    ) -> Result<(), ()> {
+        if src == target {
+            // A type is always assignable to itself
+            return Ok(());
+        }
+
+        if src == &TypeSpec::Any || target == &TypeSpec::Any {
+            // Any is assignable to and from any other type
+            // (used to escape type safety)
+            return Ok(());
+        }
+
+        match (src, target) {
+            (TypeSpec::Object(src_fields), TypeSpec::Map(target_elt_type)) => {
+                for src_field_typ in src_fields.values() {
+                    self.check_assign(src_field_typ, target_elt_type)?;
+                }
+                return Ok(());
+            }
+            (TypeSpec::Object(src_fields), TypeSpec::Object(target_fields)) => {
+                for (target_name, target_type) in target_fields {
+                    let src_type =
+                        src_fields.get(target_name).unwrap_or(&TypeSpec::Null);
+                    self.check_assign(src_type, target_type)?;
+                }
+                return Ok(());
+            }
+            (TypeSpec::Tuple(src_fields), TypeSpec::Array(target_elt_type)) => {
+                for src_field_typ in src_fields {
+                    self.check_assign(src_field_typ, target_elt_type)?;
+                }
+                return Ok(());
+            }
+            (TypeSpec::Tuple(src_fields), TypeSpec::Tuple(target_fields)) => {
+                for (i, target_type) in itertools::enumerate(target_fields) {
+                    let src_type = src_fields.get(i).unwrap_or(&TypeSpec::Null);
+                    self.check_assign(src_type, target_type)?;
+                }
+                return Ok(());
+            }
+            (src_type, TypeSpec::Union(alts)) => {
+                for alt in alts {
+                    if self.check_assign(src_type, alt).is_ok() {
+                        return Ok(());
+                    }
+                }
+                return Err(());
+            }
+            (
+                TypeSpec::Func(src_args, src_ret),
+                TypeSpec::Func(target_args, target_ret),
+            ) => {
+                if src_args.len() != target_args.len() {
+                    return Err(());
+                }
+                self.check_assign(src_ret, target_ret)?;
+                for (i, target_arg) in itertools::enumerate(target_args) {
+                    // We need to check that the target argument type
+                    // is assignable to the source argument type, since
+                    // the values passed in by the eventual caller will
+                    // conform to the target argument type, not the
+                    // source argument type
+                    let src_arg = src_args.get(i).unwrap();
+                    self.check_assign(&target_arg.t, &src_arg.t)?;
+                    if src_arg.variadic != target_arg.variadic {
+                        return Err(());
+                    }
+                }
+                return Ok(());
+            }
+            _ => return Err(()),
         }
     }
 
@@ -617,38 +722,166 @@ impl Checker {
                 annotation,
                 ..
             } => {
-                let expr_typ = self.check_expr(expr.as_ref())?;
-                match target {
-                    LetDeclTarget::Ident(ident) => {
-                        if let Some(given_typ) = annotation {
-                            self.scope.declare_var(
-                                ident.name.clone(),
-                                self.from_ast(&given_typ.typ),
-                            );
-                        } else {
-                            self.scope.declare_var(
-                                ident.name.clone(),
-                                self.check_expr(expr.as_ref())?,
-                            );
-                        }
-                        Ok(())
-                    }
-                    LetDeclTarget::ArrDestruct(fields) => {
-                        match expr_typ {
-                            TypeSpec::Tuple(tup_fields) => {
-                                if fields.len() > tup_fields.len() {
-                                    return Err(());
-                                }
+                return self.check_let_decl(target, expr, annotation);
+            }
+            Stmt::FnDecl {
+                name,
+                args,
+                ret_typ,
+                body,
+                ..
+            } => {
+                return self.check_fn_decl(name, args, ret_typ, body);
+            }
+            _ => return Err(()),
+        }
+    }
+
+    fn check_let_decl(
+        &mut self,
+        target: &LetDeclTarget,
+        expr: &Expr,
+        annotation: &Option<TypeAnnotation>,
+    ) -> Result<(), ()> {
+        let mut expr_typespec = self.check_expr(expr)?;
+        if let Some(annotation) = annotation {
+            let annotation_typespec = self.from_ast(&annotation.typ);
+            self.check_assign(&expr_typespec, &annotation_typespec)?;
+            expr_typespec = annotation_typespec;
+        }
+        match target {
+            LetDeclTarget::Ident(ident) => {
+                self.scope.declare_var(ident.name.clone(), expr_typespec);
+                return Ok(());
+            }
+            LetDeclTarget::ArrDestruct(fields) => {
+                match expr_typespec {
+                    TypeSpec::Tuple(tup_fields) => {
+                        for (i, name) in itertools::enumerate(fields) {
+                            if let Some(src_typespec) = tup_fields.get(i) {
+                                self.scope.declare_var(
+                                    name.clone(),
+                                    src_typespec.clone(),
+                                );
+                            } else {
+                                return Err(());
                             }
-                            TypeSpec::Array(elt_typ) => {}
-                            _ => return Err(()),
                         }
+                        return Ok(());
                     }
-                    LetDeclTarget::ObjDestruct(fields) => {}
+                    TypeSpec::Array(elt_typ) => {
+                        for (i, name) in itertools::enumerate(fields) {
+                            self.scope.declare_var(
+                                name.clone(),
+                                TypeSpec::union_of(itertools::cloned(&[
+                                    TypeSpec::Null,
+                                    (*elt_typ).clone(),
+                                ])),
+                            );
+                        }
+                        return Ok(());
+                    }
+                    _ => return Err(()),
                 }
             }
-            _ => Err(()),
+            LetDeclTarget::ObjDestruct(fields) => {
+                match expr_typespec {
+                    TypeSpec::Object(obj_fields) => {
+                        for destructure_item in fields {
+                            match destructure_item {
+                                ObjDestructItem::Name(ident) => {
+                                    if let Some(src_typespec) =
+                                        obj_fields.get(&ident.name)
+                                    {
+                                        self.scope.declare_var(
+                                            ident.name.clone(),
+                                            src_typespec.clone(),
+                                        );
+                                    } else {
+                                        return Err(());
+                                    }
+                                }
+                                ObjDestructItem::NameMap(key, ident) => {
+                                    if let Some(src_typespec) =
+                                        obj_fields.get(key)
+                                    {
+                                        self.scope.declare_var(
+                                            ident.name.clone(),
+                                            src_typespec.clone(),
+                                        );
+                                    } else {
+                                        return Err(());
+                                    }
+                                }
+                            }
+                        }
+                        return Ok(());
+                    }
+                    TypeSpec::Map(elt_type) => {
+                        for destructure_item in fields {
+                            let ident = match destructure_item {
+                                ObjDestructItem::Name(ident) => ident,
+                                ObjDestructItem::NameMap(_, ident) => ident,
+                            };
+                            self.scope.declare_var(
+                                ident.name.clone(),
+                                TypeSpec::union_of(itertools::cloned(&[
+                                    TypeSpec::Null,
+                                    (*elt_type).clone(),
+                                ])),
+                            );
+                        }
+                        return Ok(());
+                    }
+                    _ => return Err(()),
+                }
+            }
         }
+    }
+
+    fn check_fn_decl(
+        &mut self,
+        name: &Ident,
+        args: &Vec<FnArg>,
+        ret_typ: &Option<TypeAnnotation>,
+        body: &Vec<Stmt>,
+    ) -> Result<(), ()> {
+        let arg_typespecs: Vec<TypeSpec> = args
+            .iter()
+            .map(|a| {
+                if let Some(annotation) = a.typ.as_ref() {
+                    self.from_ast(&annotation.typ)
+                } else {
+                    TypeSpec::Any
+                }
+            })
+            .collect();
+        let ret_typespec = ret_typ
+            .as_ref()
+            .map_or(TypeSpec::Any, |annotation| self.from_ast(&annotation.typ));
+        let fn_typespec = TypeSpec::Func(
+            arg_typespecs
+                .iter()
+                .map(|spec| {
+                    ArgType {
+                        t:        Box::new(spec.clone()),
+                        variadic: false,
+                    }
+                })
+                .collect(),
+            Box::new(ret_typespec.clone()),
+        );
+        self.scope.declare_var(name.name.clone(), fn_typespec);
+        self.open_fn_scope(ret_typespec.clone());
+        args.iter().enumerate().for_each(|(i, arg)| {
+            self.scope
+                .declare_var(arg.name.clone(), arg_typespecs[i].clone())
+        });
+        for stmt in body {
+            self.check_stmt(stmt)?;
+        }
+        self.close_scope();
+        return Ok(());
     }
 
     fn check_expr(&mut self, expr: &Expr) -> Result<TypeSpec, ()> {
@@ -695,66 +928,6 @@ impl Checker {
             _ => Err(()),
         }
     }
-
-    // fn collect_return_types(
-    //     &mut self,
-    //     stmts: &Vec<Stmt>,
-    // ) -> Result<BTreeSet<TypeSpec>, ()> {
-    //     let encountered
-    //     for stmt in stmts.iter() {
-    //         match stmt {
-    //             Stmt::If { head, tail } => {
-    //                 for block in head {
-    //                     self.collect_return_types(types, &block.body);
-    //                 }
-    //                 if tail.is_some() {
-    //                     self.collect_return_types(
-    //                         types,
-    //                         &tail.as_ref().unwrap().body,
-    //                     );
-    //                 }
-    //             }
-    //             Stmt::Try {
-    //                 body,
-    //                 catch,
-    //                 finally,
-    //             } => {
-    //                 self.collect_return_types(types, &body.body);
-    //                 if catch.is_some() {
-    //                     self.collect_return_types(
-    //                         types,
-    //                         &catch.as_ref().unwrap().body,
-    //                     )?;
-    //                 }
-    //                 if finally.is_some() {
-    //                     self.collect_return_types(
-    //                         types,
-    //                         &finally.as_ref().unwrap().body,
-    //                     )?;
-    //                 }
-    //             }
-    //             Stmt::While { body, .. } => {
-    //                 self.collect_return_types(types, &body)?;
-    //             }
-    //             Stmt::ForIn { body, .. } => {
-    //                 self.collect_return_types(types, &body)?;
-    //             }
-    //             Stmt::Return { expr, .. } | Stmt::Yield { expr, .. } => {
-    //                 types.insert(self.check_expr(expr.as_ref())?);
-    //             }
-    //             Stmt::LetDecl { .. }
-    //             | Stmt::Break { .. }
-    //             | Stmt::Expr { .. }
-    //             | Stmt::Throw { .. }
-    //             | Stmt::FnDecl { .. }
-    //             | Stmt::Assignment { .. }
-    //             | Stmt::TypeDecl { .. } => {
-    //                 // other statement types can't contain relevant returns
-    //             }
-    //         }
-    //     }
-    //     Ok(())
-    // }
 }
 
 #[cfg(test)]

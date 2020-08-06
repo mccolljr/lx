@@ -1037,10 +1037,7 @@ impl Parser {
             }
             TokenType::Question => {
                 // TODO: this technically allows "???SomeType", which is
-                // redundant since a nullable nullable type is
-                // just itself. It is easier to allow that for
-                // now though since semantically it is easy
-                // to understand.
+                // redundant.
                 return Ok(Type::Nullable {
                     question: self.expect(TokenType::Question)?.pos,
                     element:  Box::new(self.parse_type()?),
