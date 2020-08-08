@@ -6,15 +6,11 @@ use crate::ast::{
     ObjKey,
     Stmt,
 };
-use crate::error::Error;
-use crate::parser::Parser;
 use crate::runtime::frame::{
     CatchContext,
     FinallyContext,
 };
 use crate::runtime::inst::Inst;
-use crate::runtime::value::Value;
-use crate::source::Code;
 
 use std::rc::Rc;
 
@@ -69,7 +65,7 @@ fn compile_stmt(insts: &mut Vec<Inst>, stmt: Stmt) {
                 }
                 AssignTarget::Select(expr, selector) => {
                     compile_expr(insts, *expr);
-                    insts.push(Inst::StackPush(Value::from(selector.name)));
+                    insts.push(Inst::StackPushStr(selector.name));
                     compile_expr(insts, *rhs);
                     insts.push(Inst::OperationIndexSet);
                 }
@@ -174,19 +170,11 @@ fn compile_stmt(insts: &mut Vec<Inst>, stmt: Stmt) {
 
 fn compile_expr(insts: &mut Vec<Inst>, expr: Expr) {
     match expr {
-        Expr::LitNull { .. } => insts.push(Inst::StackPush(Value::Null)),
-        Expr::LitInt { val, .. } => {
-            insts.push(Inst::StackPush(Value::Int(val)))
-        }
-        Expr::LitFlt { val, .. } => {
-            insts.push(Inst::StackPush(Value::Flt(val)))
-        }
-        Expr::LitBool { val, .. } => {
-            insts.push(Inst::StackPush(Value::Bool(val)))
-        }
-        Expr::LitStr { val, .. } => {
-            insts.push(Inst::StackPush(Value::Str(val)))
-        }
+        Expr::LitNull { .. } => insts.push(Inst::StackPushNull),
+        Expr::LitInt { val, .. } => insts.push(Inst::StackPushInt(val)),
+        Expr::LitFlt { val, .. } => insts.push(Inst::StackPushFloat(val)),
+        Expr::LitBool { val, .. } => insts.push(Inst::StackPushBool(val)),
+        Expr::LitStr { val, .. } => insts.push(Inst::StackPushStr(val)),
         Expr::LitFunc {
             args,
             body,
@@ -198,7 +186,7 @@ fn compile_expr(insts: &mut Vec<Inst>, expr: Expr) {
             for e in elements.into_iter().rev() {
                 compile_expr(insts, e);
             }
-            insts.push(Inst::StackPush(Value::from(elt_count as i64)));
+            insts.push(Inst::StackPushInt(elt_count as i64));
             insts.push(Inst::BuildArray);
         }
         Expr::LitObj { fields, .. } => {
@@ -206,7 +194,7 @@ fn compile_expr(insts: &mut Vec<Inst>, expr: Expr) {
             for field in fields {
                 match field.key {
                     ObjKey::Static(val, ..) => {
-                        insts.push(Inst::StackPush(Value::from(val)))
+                        insts.push(Inst::StackPushStr(val))
                     }
                     ObjKey::Dynamic(expr) => {
                         compile_expr(insts, *expr);
@@ -214,7 +202,7 @@ fn compile_expr(insts: &mut Vec<Inst>, expr: Expr) {
                 }
                 compile_expr(insts, *field.val);
             }
-            insts.push(Inst::StackPush(Value::from(fieldct as i64)));
+            insts.push(Inst::StackPushInt(fieldct as i64));
             insts.push(Inst::BuildObject);
         }
         Expr::Call { expr, args, .. } => {
@@ -263,7 +251,7 @@ fn compile_expr(insts: &mut Vec<Inst>, expr: Expr) {
         }
         Expr::Selector { expr, selector, .. } => {
             compile_expr(insts, *expr);
-            insts.push(Inst::StackPush(Value::from(selector.name)));
+            insts.push(Inst::StackPushStr(selector.name));
             insts.push(Inst::OperationIndexGet);
         }
         Expr::Import { name, .. } => {
@@ -333,7 +321,7 @@ fn compile_for_loop(var: String, stmts: Vec<Stmt>, on_break: usize) -> Inst {
     };
 }
 
-pub fn compile(stmts: Vec<Stmt>) -> Result<Vec<Inst>, Error> {
+pub fn compile(stmts: Vec<Stmt>) -> Result<Vec<Inst>, ()> {
     let mut insts = Vec::<Inst>::new();
     for stmt in stmts {
         compile_stmt(&mut insts, stmt);

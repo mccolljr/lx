@@ -372,7 +372,7 @@ mod tests {
     macro_rules! assert_tokens {
         ($src:expr, $($typ:ident($start:expr,$len:expr,$lit:expr)),*) => {{
             use super::{Code, Pos, Token, TokenType, Lexer};
-            let mut lex = Lexer::new(&Code::from($src));
+            let mut lex = Lexer::new(&Code::new("-", $src));
             let want: Vec<Token> = vec![
                 $(Token::new(Pos::span($start,$len), TokenType::$typ, $lit)),*
             ];

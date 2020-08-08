@@ -3,10 +3,6 @@ use regex::{
     Regex,
 };
 
-use crate::ast::{
-    Type,
-    TypeAnnotation,
-};
 use crate::error::{
     Error,
     RuntimeError,

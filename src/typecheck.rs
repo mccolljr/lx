@@ -928,6 +928,8 @@ impl Checker {
             _ => Err(()),
         }
     }
+
+    fn resolve(&mut self, path: String) {}
 }
 
 #[cfg(test)]

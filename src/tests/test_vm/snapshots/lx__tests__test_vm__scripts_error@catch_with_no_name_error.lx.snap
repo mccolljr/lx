@@ -3,5 +3,6 @@ source: src/tests/test_vm/mod.rs
 expression: output
 input_file: src/tests/test_vm/scripts_error/catch_with_no_name_error.lx
 ---
-ERROR! expected identifier, but found { at line 3:9
+ERROR! /Users/jmccollum/rust/lx
+expected identifier, but found { at src/tests/test_vm/scripts_error/catch_with_no_name_error.lx:3:9
 

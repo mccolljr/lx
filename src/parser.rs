@@ -2,6 +2,7 @@ use crate::ast::{
     CatchBlock,
     ElseBlock,
     Expr,
+    File,
     FinallyBlock,
     FnArg,
     Ident,
@@ -12,6 +13,7 @@ use crate::ast::{
     ObjKey,
     ObjLitField,
     ObjTypeField,
+    Scope,
     Stmt,
     TryBlock,
     Type,
@@ -28,139 +30,60 @@ use crate::token::{
     TokenType,
 };
 
-use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 
-struct ParseScope {
-    parent:     Option<Rc<ParseScope>>,
-    decls:      RefCell<HashMap<String, Pos>>,
-    type_decls: RefCell<HashMap<String, Pos>>,
-    captures:   RefCell<Vec<String>>,
+pub struct Parser<'this> {
+    lex:         Lexer,
+    cur_t:       Token,
+    peek_t:      Token,
+    track_scope: bool,
+    scope:       Rc<Scope>,
+    func_depth:  usize,
+    loop_depth:  usize,
+    import:      &'this mut dyn FnMut(String) -> Result<(), SyntaxError>,
 }
 
-impl ParseScope {
-    fn create(parent: Option<Rc<ParseScope>>) -> Rc<Self> {
-        Rc::from(ParseScope {
-            parent,
-            decls: RefCell::new(HashMap::new()),
-            type_decls: RefCell::new(HashMap::new()),
-            captures: RefCell::new(Vec::new()),
-        })
-    }
-
-    fn get_local_decl(&self, name: &String) -> Option<Pos> {
-        self.decls.borrow().get(name).map(|pos| *pos)
-    }
-
-    fn get_local_type_decl(&self, name: &String) -> Option<Pos> {
-        self.type_decls.borrow().get(name).map(|pos| *pos)
-    }
-
-    fn declare(&self, name: String, at: Pos) -> Option<Pos> {
-        if let Some(original) = self.get_local_decl(&name) {
-            return Some(original);
-        }
-        self.decls.borrow_mut().insert(name.clone(), at);
-        None
-    }
-
-    fn declare_type(&self, name: String, at: Pos) -> Option<Pos> {
-        if let Some(original) = self.get_local_type_decl(&name) {
-            return Some(original);
-        }
-        self.type_decls.borrow_mut().insert(name.clone(), at);
-        None
-    }
-
-    fn utilize(&self, name: &String) -> bool {
-        if self.get_local_decl(name).is_some() {
-            // found in local scope
-            return true;
-        }
-
-        if let Some(parent) = &self.parent {
-            // if the name is found several scopes up, we need to capture it in
-            // all of the intermediate scopes, too.
-            if !parent.utilize(name) {
-                return false;
-            }
-            // if we get here, it was found in or above the parent scope,
-            // and we need to capture the name
-            self.captures.borrow_mut().push(name.clone());
-            return true;
-        }
-
-        return false;
-    }
-
-    fn utilize_type(&self, name: &String) -> bool {
-        if self.get_local_type_decl(name).is_some() {
-            // found in local scope
-            return true;
-        }
-
-        if let Some(parent) = &self.parent {
-            if parent.utilize_type(name) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-}
-
-pub struct Parser {
-    lex:        Lexer,
-    cur_t:      Token,
-    peek_t:     Token,
-    scope:      Option<Rc<ParseScope>>,
-    func_depth: usize,
-    loop_depth: usize,
-}
-
-impl Parser {
+impl<'this> Parser<'this> {
     pub fn parse_file(
+        path: String,
+        src: &Code,
+        global: Option<Rc<Scope>>,
+        import: &'this mut dyn FnMut(String) -> Result<(), SyntaxError>,
+    ) -> Result<File, SyntaxError> {
+        let mut p = Parser::new(src, true, global, import);
+        p.advance()?;
+        let stmts = p.parse_stmt_list(&[TokenType::EOF])?;
+        return Ok(File {
+            path,
+            stmts,
+            scope: p.scope.clone(),
+        });
+    }
+
+    fn new(
         src: &Code,
         track_scope: bool,
-        globals: Vec<String>,
-    ) -> Result<Vec<Stmt>, SyntaxError> {
-        let mut p = Parser::new(src, track_scope, globals);
-        p.advance()?;
-        p.parse_stmt_list(&[TokenType::EOF])
-    }
-
-    fn new(src: &Code, track_scope: bool, globals: Vec<String>) -> Self {
+        global: Option<Rc<Scope>>,
+        import: &'this mut dyn FnMut(String) -> Result<(), SyntaxError>,
+    ) -> Self {
         Parser {
-            lex:        Lexer::new(src),
-            cur_t:      Token::new_meta(0, TokenType::EOF),
-            peek_t:     Token::new_meta(0, TokenType::EOF),
-            scope:      if track_scope {
-                let global = ParseScope::create(None);
-                for name in globals {
-                    global
-                        .declare(name, Pos::mark(0))
-                        .expect_none("duplicate global");
-                }
-                Some(ParseScope::create(Some(global)))
-            } else {
-                None
-            },
+            lex: Lexer::new(src),
+            cur_t: Token::new_meta(0, TokenType::EOF),
+            peek_t: Token::new_meta(0, TokenType::EOF),
+            track_scope,
+            scope: Scope::create(global),
             func_depth: 0,
             loop_depth: 0,
+            import,
         }
     }
 
     fn open_scope(&mut self) {
-        if let Some(scope) = &self.scope {
-            self.scope = Some(ParseScope::create(Some(Rc::clone(scope))));
-        }
+        self.scope = Scope::create(Some(Rc::clone(&self.scope)));
     }
 
     fn close_scope(&mut self) {
-        if let Some(scope) = &self.scope {
-            self.scope = Some(Rc::clone(scope.parent.as_ref().unwrap()));
-        }
+        self.scope = Rc::clone(self.scope.parent().unwrap());
     }
 
     fn scope_declare(
@@ -168,12 +91,12 @@ impl Parser {
         name: String,
         pos: Pos,
     ) -> Result<(), SyntaxError> {
-        if let Some(scope) = &self.scope {
-            if let Some(orig_decl_pos) = scope.declare(name.clone(), pos) {
+        if let Some(orig_pos) = self.scope.declare(name.clone(), pos) {
+            if self.track_scope {
                 return Err(SyntaxError::Redeclaration {
                     code: self.lex.src.clone(),
                     at: pos,
-                    original: orig_decl_pos,
+                    original: orig_pos,
                     name,
                 });
             }
@@ -186,12 +109,12 @@ impl Parser {
         name: String,
         pos: Pos,
     ) -> Result<(), SyntaxError> {
-        if let Some(scope) = &self.scope {
-            if let Some(orig_decl_pos) = scope.declare_type(name.clone(), pos) {
+        if let Some(orig_pos) = self.scope.declare_type(name.clone(), pos) {
+            if self.track_scope {
                 return Err(SyntaxError::TypeRedeclaration {
                     code: self.lex.src.clone(),
                     at: pos,
-                    original: orig_decl_pos,
+                    original: orig_pos,
                     name,
                 });
             }
@@ -204,8 +127,8 @@ impl Parser {
         name: &String,
         pos: Pos,
     ) -> Result<(), SyntaxError> {
-        if let Some(scope) = &self.scope {
-            if !scope.utilize(name) {
+        if !self.scope.utilize(name) {
+            if self.track_scope {
                 return Err(SyntaxError::Undeclared {
                     code: self.lex.src.clone(),
                     at:   pos,
@@ -221,8 +144,8 @@ impl Parser {
         name: &String,
         pos: Pos,
     ) -> Result<(), SyntaxError> {
-        if let Some(scope) = &self.scope {
-            if !scope.utilize_type(name) {
+        if !self.scope.utilize_type(name) {
+            if self.track_scope {
                 return Err(SyntaxError::TypeUndeclared {
                     code: self.lex.src.clone(),
                     at:   pos,
@@ -234,11 +157,12 @@ impl Parser {
     }
 
     fn scope_is_closure(&mut self) -> bool {
-        if let Some(scope) = &self.scope {
-            return !scope.captures.borrow().is_empty();
+        if self.track_scope {
+            return self.scope.is_closure();
+        } else {
+            // must treat every scope as a closure
+            return true;
         }
-        // If we're not tracking scope, treat every scope as a closure.
-        return true;
     }
 
     pub fn parse_stmt_list(
@@ -765,11 +689,16 @@ impl Parser {
         self.advance()?;
         let mut x = match self.cur_t.typ {
             TokenType::KwImport => {
+                let kwimport = self.cur_t.pos;
+                let oparen = self.expect(TokenType::OParen)?.pos;
+                let name = self.expect(TokenType::LitString)?.lit;
+                let cparen = self.expect(TokenType::CParen)?.pos;
+                (self.import)(name.clone())?;
                 Expr::Import {
-                    kwimport: self.cur_t.pos,
-                    oparen:   self.expect(TokenType::OParen)?.pos,
-                    name:     self.expect(TokenType::LitString)?.lit,
-                    cparen:   self.expect(TokenType::CParen)?.pos,
+                    kwimport,
+                    oparen,
+                    name,
+                    cparen,
                 }
             }
             TokenType::KwNull => {
@@ -1217,8 +1146,10 @@ mod test {
 
     macro_rules! assert_expr {
         ($src:expr, $want:expr) => {{
-            let src = crate::source::Code::from($src);
-            let mut parser = crate::parser::Parser::new(&src, false, vec![]);
+            let src = crate::source::Code::new("-", $src);
+            let mut import = Box::from(|_| Ok(()));
+            let mut parser =
+                crate::parser::Parser::new(&src, false, None, import.as_mut());
             parser.advance().expect("failed to parse first token");
             let got = parser.parse_expr(0).unwrap();
             assert_eq!($want, got);
@@ -1227,8 +1158,10 @@ mod test {
 
     macro_rules! assert_type {
         ($src:expr, $want:expr) => {{
-            let src = crate::source::Code::from($src);
-            let mut parser = crate::parser::Parser::new(&src, false, vec![]);
+            let src = crate::source::Code::new("-", $src);
+            let mut import = Box::from(|_| Ok(()));
+            let mut parser =
+                crate::parser::Parser::new(&src, false, None, import.as_mut());
             parser.advance().expect("failed to parse first token");
             let got = parser.parse_type().unwrap();
             assert_eq!($want, got);
@@ -1237,15 +1170,19 @@ mod test {
 
     macro_rules! assert_expr_str {
         ($src:expr, $want:expr) => {{
-            let src = crate::source::Code::from($src);
-            let mut parser = crate::parser::Parser::new(&src, false, vec![]);
+            let src = crate::source::Code::new("-", $src);
+            let mut import = Box::from(|_| Ok(()));
+            let mut parser =
+                crate::parser::Parser::new(&src, false, None, import.as_mut());
             parser.advance().expect("failed to parse first token");
             let got = format!("{}", parser.parse_expr(0).unwrap());
             assert_eq!($want, got);
         }};
         ($src:expr; ERROR) => {{
-            let src = crate::source::Code::from($src);
-            let mut parser = crate::parser::Parser::new(&src, false);
+            let src = crate::source::Code::new("-", $src);
+            let mut import = Box::from(|_| Ok(()));
+            let mut parser =
+                crate::parser::Parser::new(&src, false, import.as_mut());
             assert!(parser.parse_expr(0).is_err());
         }};
     }

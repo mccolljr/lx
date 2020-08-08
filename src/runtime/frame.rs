@@ -1,3 +1,8 @@
+use serde::{
+    Deserialize,
+    Serialize,
+};
+
 use super::inst::Inst;
 use super::scope::Scope;
 use super::value::Value;
@@ -7,10 +12,10 @@ use crate::error::Error;
 use std::ops::Try;
 use std::rc::Rc;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CatchContext(pub String, pub Rc<[Inst]>);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FinallyContext(pub Rc<[Inst]>);
 
 #[derive(Debug, Clone)]

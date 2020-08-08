@@ -1,3 +1,8 @@
+use serde::{
+    Deserialize,
+    Serialize,
+};
+
 use super::expr::Expr;
 use super::stmt::Stmt;
 use super::types::Type;
@@ -11,7 +16,9 @@ use std::fmt::{
     Result as FmtResult,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, Ord, PartialOrd, Hash)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, Ord, PartialOrd, Hash, Serialize, Deserialize,
+)]
 pub struct Ident {
     pub pos:  Pos,
     pub name: String,
@@ -104,7 +111,7 @@ impl Display for LetDeclTarget {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ObjDestructItem {
     Name(Ident),
     NameMap(String, Ident),
@@ -139,6 +146,12 @@ pub struct ObjLitField {
     pub val:   Box<Expr>,
 }
 
+impl Display for ObjLitField {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+        write!(f, "{}: {}", self.key, self.val)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ObjTypeField {
     pub key:   Ident,
@@ -146,9 +159,9 @@ pub struct ObjTypeField {
     pub typ:   Box<Type>,
 }
 
-impl Display for ObjLitField {
+impl Display for ObjTypeField {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
-        write!(f, "{}: {}", self.key, self.val)
+        write!(f, "{}: {}", self.key, self.typ)
     }
 }
 

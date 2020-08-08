@@ -1,11 +1,13 @@
 use crate::ast::ObjDestructItem;
-use crate::compiler::compile;
+use crate::context::{
+    Context,
+    Program,
+};
 use crate::error::{
     Error,
     Panic,
     RuntimeError,
 };
-use crate::parser::Parser;
 use crate::runtime::builtin::{
     builtins,
     extend_builtins,
@@ -24,7 +26,6 @@ use crate::runtime::value::{
     Object,
     Value,
 };
-use crate::source::Code;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -36,8 +37,8 @@ pub struct VM {
 }
 
 impl VM {
-    pub fn eval(
-        src: impl Into<String>,
+    pub fn execute(
+        path: &str,
         globals: Option<HashMap<String, Value>>,
     ) -> Result<(), Error> {
         let global_values = if globals.is_some() {
@@ -46,13 +47,10 @@ impl VM {
             builtins()
         };
 
-        let code = Code::from(src.into());
-        let stmts = Parser::parse_file(
-            &code,
-            true,
-            global_values.keys().map(String::clone).collect(),
+        let program = Context::compile(
+            path,
+            global_values.keys().map(Clone::clone).collect(),
         )?;
-        let insts = Rc::from(compile(stmts)?);
         let globals = Rc::from(Scope::new(None));
         for (k, v) in global_values {
             globals.declare(k, v);
@@ -61,7 +59,7 @@ impl VM {
             state: Rc::new(VMState {
                 stack: RefCell::new(Vec::with_capacity(2048)),
                 globals,
-                insts,
+                program,
                 imports: RefCell::new(HashMap::new()),
             }),
         };
@@ -70,7 +68,7 @@ impl VM {
 
     fn run(&self) -> Result<(), Error> {
         match self.state.run_frame(Frame::new(
-            Rc::clone(&self.state.insts),
+            self.state.program.main()?,
             Rc::new(Scope::new(Some(Rc::clone(&self.state.globals)))),
             0,
         )) {
@@ -82,9 +80,9 @@ impl VM {
 
 #[derive(Debug)]
 pub struct VMState {
+    program: Program,
     stack:   RefCell<Vec<Value>>,
     globals: Rc<Scope>,
-    insts:   Rc<[Inst]>,
     imports: RefCell<HashMap<String, Object>>,
 }
 
@@ -115,13 +113,12 @@ impl VMState {
         if let Some(existing) = self.imports.borrow().get(&path) {
             return Ok(Value::Object(existing.clone()));
         }
-        let code = Code::from(
-            std::fs::read_to_string(&path).expect("unable to import"),
-        );
-        let stmts = Parser::parse_file(&code, true, self.globals.names())?;
-        let insts = Rc::from(compile(stmts)?);
-        let import_scope = Rc::new(Scope::new(Some(Rc::clone(&self.globals))));
-        match self.run_frame(Frame::new(insts, import_scope.clone(), 0)) {
+        let import_scope = Rc::new(Scope::extend(Rc::clone(&self.globals)));
+        match self.run_frame(Frame::new(
+            self.program.file(path.clone())?,
+            Rc::clone(&import_scope),
+            0,
+        )) {
             FrameStatus::Excepted(err) => return Err(err),
             FrameStatus::Ended => { /* all good */ }
             _ => panic!("PANIC: UNEXPECTED IMPORT FRAME STATUS"),
@@ -164,8 +161,20 @@ impl VMState {
                     Inst::StackPop => {
                         self.pop_stack();
                     }
-                    Inst::StackPush(v) => {
-                        self.push_stack(v);
+                    Inst::StackPushNull => {
+                        self.push_stack(Value::Null);
+                    }
+                    Inst::StackPushInt(v) => {
+                        self.push_stack(Value::Int(v));
+                    }
+                    Inst::StackPushFloat(v) => {
+                        self.push_stack(Value::Flt(v));
+                    }
+                    Inst::StackPushBool(v) => {
+                        self.push_stack(Value::Bool(v));
+                    }
+                    Inst::StackPushStr(v) => {
+                        self.push_stack(Value::Str(v));
                     }
                     Inst::ScopeLoad(name) => {
                         self.push_stack(scope.get(&name));

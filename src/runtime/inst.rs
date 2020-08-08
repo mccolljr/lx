@@ -1,18 +1,27 @@
+use serde::{
+    Deserialize,
+    Serialize,
+};
+
 use crate::ast::ObjDestructItem;
 use crate::runtime::frame::{
     CatchContext,
     FinallyContext,
 };
-use crate::runtime::value::Value;
 use crate::token::TokenType;
 use std::rc::Rc;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub enum Inst {
     Illegal,
     SysImport(String),
     SysTypeof,
-    StackPush(Value),
+    StackPushNull,
+    StackPushInt(i64),
+    StackPushFloat(f64),
+    StackPushBool(bool),
+    StackPushStr(String),
     StackPop,
     ScopeLoad(String),
     ScopeStore(String),

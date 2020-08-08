@@ -1,3 +1,8 @@
+use insta::{
+    assert_snapshot,
+    glob,
+};
+
 use std::io::Read;
 use std::path::Path;
 use std::process::{

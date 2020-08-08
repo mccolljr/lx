@@ -1,7 +1,13 @@
-fn do_stuff() {
-    type EmptyTuple = [];
-    let x: EmptyTuple = [];
-    return x;
+fn main() {
+    if true {
+        while true {
+            for _ in range(0,10) {
+                print("Hello, World");
+                break;
+            }
+            break;
+        }
+    }
 }
 
-print(do_stuff());
+main();

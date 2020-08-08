@@ -86,13 +86,11 @@ impl Display for Type {
             Type::Named { ident, .. } => write!(f, "{}", ident),
             Type::Object { fields, .. } => {
                 write!(f, "{{")?;
-                for (i, ObjTypeField { key, typ, .. }) in
-                    fields.iter().enumerate()
-                {
+                for (i, field) in fields.iter().enumerate() {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{}: {}", key, typ)?;
+                    write!(f, "{}", field)?;
                 }
                 write!(f, "}}")
             }
