@@ -1,6 +1,4 @@
-fn main() {
-    let { greet } = import("./other.lx");
-    greet("Jake");
-}
-
-main();
+let x: int = 12;
+let y: str = "xyz";
+let z = x+y;
+let q: float = z;

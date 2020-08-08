@@ -15,6 +15,7 @@ use crate::error::SyntaxError;
 use crate::parser::Parser;
 use crate::runtime::inst::Inst;
 use crate::source::Code;
+use crate::typecheck::Checker;
 
 use std::collections::HashMap;
 use std::fs::read_to_string;
@@ -108,6 +109,10 @@ impl Context {
         // get the string of the full path
         let mut ctx = Context::new(globals);
         let full_path = ctx.import(main_file)?;
+
+        Checker::check_file(ctx.files.get(&full_path).unwrap())
+            .expect("type check failed");
+
         let mut compiled = HashMap::<String, Rc<[Inst]>>::new();
         for (name, file) in ctx.files {
             compiled.insert(name, Rc::from(compile(file.stmts).unwrap()));

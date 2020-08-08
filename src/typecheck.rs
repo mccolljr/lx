@@ -1,9 +1,11 @@
 #![allow(unused_imports, dead_code, unused_variables)]
 
 use itertools;
+use quick_error::quick_error;
 
 use crate::ast::{
     Expr,
+    File,
     FnArg,
     Ident,
     LetDeclTarget,
@@ -32,6 +34,16 @@ use std::hash::{
     Hasher,
 };
 use std::rc::Rc;
+
+quick_error! {
+    #[derive(Debug, Clone)]
+    pub enum E {
+        TypeError(issue: String) {
+            display("type error: {}", issue)
+            from(issue: String) -> (issue)
+        }
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, PartialOrd, Eq, Ord)]
 struct ArgType {
@@ -337,11 +349,19 @@ impl Scope {
     }
 }
 
-struct Checker {
+pub struct Checker {
     scope: Rc<Scope>,
 }
 
 impl Checker {
+    pub fn check_file(f: &File) -> Result<(), E> {
+        let mut c = Checker::new();
+        for stmt in f.stmts.iter() {
+            c.check_stmt(stmt)?;
+        }
+        Ok(())
+    }
+
     fn new() -> Self {
         Checker {
             scope: Scope::new(),
@@ -421,7 +441,7 @@ impl Checker {
         &mut self,
         src: &TypeSpec,
         target: &TypeSpec,
-    ) -> Result<(), ()> {
+    ) -> Result<(), E> {
         if src == target {
             // A type is always assignable to itself
             return Ok(());
@@ -467,14 +487,20 @@ impl Checker {
                         return Ok(());
                     }
                 }
-                return Err(());
+                return Err(E::from(format!(
+                    "cannot assign {:?} to {:?}",
+                    src_type, alts
+                )));
             }
             (
                 TypeSpec::Func(src_args, src_ret),
                 TypeSpec::Func(target_args, target_ret),
             ) => {
                 if src_args.len() != target_args.len() {
-                    return Err(());
+                    return Err(E::from(format!(
+                        "cannot assign {:?} to {:?}",
+                        src, target
+                    )));
                 }
                 self.check_assign(src_ret, target_ret)?;
                 for (i, target_arg) in itertools::enumerate(target_args) {
@@ -486,12 +512,20 @@ impl Checker {
                     let src_arg = src_args.get(i).unwrap();
                     self.check_assign(&target_arg.t, &src_arg.t)?;
                     if src_arg.variadic != target_arg.variadic {
-                        return Err(());
+                        return Err(E::from(format!(
+                            "cannot assign {:?} to {:?}",
+                            src, target
+                        )));
                     }
                 }
                 return Ok(());
             }
-            _ => return Err(()),
+            _ => {
+                return Err(E::from(format!(
+                    "cannot assign {:?} to {:?}",
+                    src, target
+                )))
+            }
         }
     }
 
@@ -499,7 +533,7 @@ impl Checker {
         &mut self,
         lhs: &TypeSpec,
         rhs: &TypeSpec,
-    ) -> Result<TypeSpec, ()> {
+    ) -> Result<TypeSpec, E> {
         match (lhs, rhs) {
             (TypeSpec::Int, TypeSpec::Int) => Ok(TypeSpec::Int),
             (TypeSpec::Int, TypeSpec::Float) => Ok(TypeSpec::Float),
@@ -530,7 +564,12 @@ impl Checker {
                         .collect(),
                 )))
             }
-            _ => Err(()),
+            _ => {
+                return Err(E::from(format!(
+                    "cannot add {:?} to {:?}",
+                    rhs, lhs
+                )))
+            }
         }
     }
 
@@ -538,13 +577,18 @@ impl Checker {
         &mut self,
         lhs: &TypeSpec,
         rhs: &TypeSpec,
-    ) -> Result<TypeSpec, ()> {
+    ) -> Result<TypeSpec, E> {
         match (lhs, rhs) {
             (TypeSpec::Int, TypeSpec::Int) => Ok(TypeSpec::Int),
             (TypeSpec::Int, TypeSpec::Float) => Ok(TypeSpec::Float),
             (TypeSpec::Float, TypeSpec::Int) => Ok(TypeSpec::Float),
             (TypeSpec::Float, TypeSpec::Float) => Ok(TypeSpec::Float),
-            _ => Err(()),
+            _ => {
+                return Err(E::from(format!(
+                    "cannot subtract {:?} from {:?}",
+                    rhs, lhs
+                )))
+            }
         }
     }
 
@@ -552,13 +596,18 @@ impl Checker {
         &mut self,
         lhs: &TypeSpec,
         rhs: &TypeSpec,
-    ) -> Result<TypeSpec, ()> {
+    ) -> Result<TypeSpec, E> {
         match (lhs, rhs) {
             (TypeSpec::Int, TypeSpec::Int) => Ok(TypeSpec::Int),
             (TypeSpec::Int, TypeSpec::Float) => Ok(TypeSpec::Float),
             (TypeSpec::Float, TypeSpec::Int) => Ok(TypeSpec::Float),
             (TypeSpec::Float, TypeSpec::Float) => Ok(TypeSpec::Float),
-            _ => Err(()),
+            _ => {
+                return Err(E::from(format!(
+                    "cannot multiply {:?} by {:?}",
+                    lhs, rhs
+                )))
+            }
         }
     }
 
@@ -566,13 +615,18 @@ impl Checker {
         &mut self,
         lhs: &TypeSpec,
         rhs: &TypeSpec,
-    ) -> Result<TypeSpec, ()> {
+    ) -> Result<TypeSpec, E> {
         match (lhs, rhs) {
             (TypeSpec::Int, TypeSpec::Int) => Ok(TypeSpec::Int),
             (TypeSpec::Int, TypeSpec::Float) => Ok(TypeSpec::Float),
             (TypeSpec::Float, TypeSpec::Int) => Ok(TypeSpec::Float),
             (TypeSpec::Float, TypeSpec::Float) => Ok(TypeSpec::Float),
-            _ => Err(()),
+            _ => {
+                return Err(E::from(format!(
+                    "cannot divide {:?} by {:?}",
+                    lhs, rhs
+                )))
+            }
         }
     }
 
@@ -580,13 +634,18 @@ impl Checker {
         &mut self,
         lhs: &TypeSpec,
         rhs: &TypeSpec,
-    ) -> Result<TypeSpec, ()> {
+    ) -> Result<TypeSpec, E> {
         match (lhs, rhs) {
             (TypeSpec::Int, TypeSpec::Int) => Ok(TypeSpec::Int),
             (TypeSpec::Int, TypeSpec::Float) => Ok(TypeSpec::Float),
             (TypeSpec::Float, TypeSpec::Int) => Ok(TypeSpec::Float),
             (TypeSpec::Float, TypeSpec::Float) => Ok(TypeSpec::Float),
-            _ => Err(()),
+            _ => {
+                return Err(E::from(format!(
+                    "cannot divide {:?} by {:?} for a remainder",
+                    lhs, rhs
+                )))
+            }
         }
     }
 
@@ -594,7 +653,7 @@ impl Checker {
         &mut self,
         lhs: &TypeSpec,
         rhs: &TypeSpec,
-    ) -> Result<TypeSpec, ()> {
+    ) -> Result<TypeSpec, E> {
         // TODO: catch cases where types ensure result will always be false
         Ok(TypeSpec::Bool)
     }
@@ -603,7 +662,7 @@ impl Checker {
         &mut self,
         lhs: &TypeSpec,
         rhs: &TypeSpec,
-    ) -> Result<TypeSpec, ()> {
+    ) -> Result<TypeSpec, E> {
         // TODO: catch cases where types ensure result will always be true
         Ok(TypeSpec::Bool)
     }
@@ -612,13 +671,18 @@ impl Checker {
         &mut self,
         lhs: &TypeSpec,
         rhs: &TypeSpec,
-    ) -> Result<TypeSpec, ()> {
+    ) -> Result<TypeSpec, E> {
         match (lhs, rhs) {
             (TypeSpec::Int, TypeSpec::Int) => Ok(TypeSpec::Int),
             (TypeSpec::Int, TypeSpec::Float) => Ok(TypeSpec::Float),
             (TypeSpec::Float, TypeSpec::Int) => Ok(TypeSpec::Float),
             (TypeSpec::Float, TypeSpec::Float) => Ok(TypeSpec::Float),
-            _ => Err(()),
+            _ => {
+                return Err(E::from(format!(
+                    "cannot compare {:?} with {:?}",
+                    lhs, rhs
+                )))
+            }
         }
     }
 
@@ -626,13 +690,18 @@ impl Checker {
         &mut self,
         lhs: &TypeSpec,
         rhs: &TypeSpec,
-    ) -> Result<TypeSpec, ()> {
+    ) -> Result<TypeSpec, E> {
         match (lhs, rhs) {
             (TypeSpec::Int, TypeSpec::Int) => Ok(TypeSpec::Int),
             (TypeSpec::Int, TypeSpec::Float) => Ok(TypeSpec::Float),
             (TypeSpec::Float, TypeSpec::Int) => Ok(TypeSpec::Float),
             (TypeSpec::Float, TypeSpec::Float) => Ok(TypeSpec::Float),
-            _ => Err(()),
+            _ => {
+                return Err(E::from(format!(
+                    "cannot compare {:?} with {:?}",
+                    lhs, rhs
+                )))
+            }
         }
     }
 
@@ -640,13 +709,18 @@ impl Checker {
         &mut self,
         lhs: &TypeSpec,
         rhs: &TypeSpec,
-    ) -> Result<TypeSpec, ()> {
+    ) -> Result<TypeSpec, E> {
         match (lhs, rhs) {
             (TypeSpec::Int, TypeSpec::Int) => Ok(TypeSpec::Int),
             (TypeSpec::Int, TypeSpec::Float) => Ok(TypeSpec::Float),
             (TypeSpec::Float, TypeSpec::Int) => Ok(TypeSpec::Float),
             (TypeSpec::Float, TypeSpec::Float) => Ok(TypeSpec::Float),
-            _ => Err(()),
+            _ => {
+                return Err(E::from(format!(
+                    "cannot compare {:?} with {:?}",
+                    lhs, rhs
+                )))
+            }
         }
     }
 
@@ -654,13 +728,18 @@ impl Checker {
         &mut self,
         lhs: &TypeSpec,
         rhs: &TypeSpec,
-    ) -> Result<TypeSpec, ()> {
+    ) -> Result<TypeSpec, E> {
         match (lhs, rhs) {
             (TypeSpec::Int, TypeSpec::Int) => Ok(TypeSpec::Int),
             (TypeSpec::Int, TypeSpec::Float) => Ok(TypeSpec::Float),
             (TypeSpec::Float, TypeSpec::Int) => Ok(TypeSpec::Float),
             (TypeSpec::Float, TypeSpec::Float) => Ok(TypeSpec::Float),
-            _ => Err(()),
+            _ => {
+                return Err(E::from(format!(
+                    "cannot compare {:?} with {:?}",
+                    lhs, rhs
+                )))
+            }
         }
     }
 
@@ -669,7 +748,7 @@ impl Checker {
         lhs: &TypeSpec,
         rhs: &TypeSpec,
         op_typ: TokenType,
-    ) -> Result<TypeSpec, ()> {
+    ) -> Result<TypeSpec, E> {
         match op_typ {
             TokenType::OpAdd => self.check_op_add(lhs, rhs),
             TokenType::OpSub => self.check_op_sub(lhs, rhs),
@@ -682,23 +761,29 @@ impl Checker {
             TokenType::OpLt => self.check_op_lt(lhs, rhs),
             TokenType::OpGeq => self.check_op_geq(lhs, rhs),
             TokenType::OpLeq => self.check_op_leq(lhs, rhs),
-            _ => Err(()),
+            _ => {
+                return Err(E::from(format!(
+                    "unknown binary operation: {}",
+                    op_typ
+                )))
+            }
         }
     }
 
-    fn check_unary_not(&mut self, _: &TypeSpec) -> Result<TypeSpec, ()> {
+    fn check_unary_not(&mut self, _: &TypeSpec) -> Result<TypeSpec, E> {
         // TODO: check for cases where type will always return true
         Ok(TypeSpec::Bool)
     }
 
-    fn check_unary_negative(
-        &mut self,
-        item: &TypeSpec,
-    ) -> Result<TypeSpec, ()> {
+    fn check_unary_negative(&mut self, item: &TypeSpec) -> Result<TypeSpec, E> {
         match item {
             TypeSpec::Int => Ok(TypeSpec::Int),
             TypeSpec::Float => Ok(TypeSpec::Float),
-            _ => Err(()),
+            _ => {
+                return Err(E::from(
+                    format!("cannot make {:?} negative", item,),
+                ))
+            }
         }
     }
 
@@ -706,15 +791,20 @@ impl Checker {
         &mut self,
         item: &TypeSpec,
         op_typ: TokenType,
-    ) -> Result<TypeSpec, ()> {
+    ) -> Result<TypeSpec, E> {
         match op_typ {
             TokenType::Bang => self.check_unary_not(item),
             TokenType::OpSub => self.check_unary_negative(item),
-            _ => Err(()),
+            _ => {
+                return Err(E::from(format!(
+                    "unknown unary operation: {}",
+                    op_typ
+                )))
+            }
         }
     }
 
-    fn check_stmt(&mut self, stmt: &Stmt) -> Result<(), ()> {
+    fn check_stmt(&mut self, stmt: &Stmt) -> Result<(), E> {
         match stmt {
             Stmt::LetDecl {
                 target,
@@ -733,7 +823,12 @@ impl Checker {
             } => {
                 return self.check_fn_decl(name, args, ret_typ, body);
             }
-            _ => return Err(()),
+            _ => {
+                return Err(E::from(format!(
+                    "unimplemented statement type: {:?}",
+                    stmt
+                )))
+            }
         }
     }
 
@@ -742,7 +837,7 @@ impl Checker {
         target: &LetDeclTarget,
         expr: &Expr,
         annotation: &Option<TypeAnnotation>,
-    ) -> Result<(), ()> {
+    ) -> Result<(), E> {
         let mut expr_typespec = self.check_expr(expr)?;
         if let Some(annotation) = annotation {
             let annotation_typespec = self.from_ast(&annotation.typ);
@@ -764,7 +859,9 @@ impl Checker {
                                     src_typespec.clone(),
                                 );
                             } else {
-                                return Err(());
+                                return Err(E::from(
+                                    format!("too few values",),
+                                ));
                             }
                         }
                         return Ok(());
@@ -781,7 +878,12 @@ impl Checker {
                         }
                         return Ok(());
                     }
-                    _ => return Err(()),
+                    _ => {
+                        return Err(E::from(format!(
+                            "cannot destructure {:?} as an array",
+                            expr_typespec
+                        )))
+                    }
                 }
             }
             LetDeclTarget::ObjDestruct(fields) => {
@@ -798,7 +900,9 @@ impl Checker {
                                             src_typespec.clone(),
                                         );
                                     } else {
-                                        return Err(());
+                                        return Err(E::from(format!(
+                                            "object destructure: A"
+                                        )));
                                     }
                                 }
                                 ObjDestructItem::NameMap(key, ident) => {
@@ -810,7 +914,9 @@ impl Checker {
                                             src_typespec.clone(),
                                         );
                                     } else {
-                                        return Err(());
+                                        return Err(E::from(format!(
+                                            "object destructure: B"
+                                        )));
                                     }
                                 }
                             }
@@ -833,7 +939,12 @@ impl Checker {
                         }
                         return Ok(());
                     }
-                    _ => return Err(()),
+                    _ => {
+                        return Err(E::from(format!(
+                            "cannot destructure {:?} as an object",
+                            expr_typespec
+                        )))
+                    }
                 }
             }
         }
@@ -845,7 +956,7 @@ impl Checker {
         args: &Vec<FnArg>,
         ret_typ: &Option<TypeAnnotation>,
         body: &Vec<Stmt>,
-    ) -> Result<(), ()> {
+    ) -> Result<(), E> {
         let arg_typespecs: Vec<TypeSpec> = args
             .iter()
             .map(|a| {
@@ -884,7 +995,7 @@ impl Checker {
         return Ok(());
     }
 
-    fn check_expr(&mut self, expr: &Expr) -> Result<TypeSpec, ()> {
+    fn check_expr(&mut self, expr: &Expr) -> Result<TypeSpec, E> {
         match expr {
             Expr::LitInt { .. } => Ok(TypeSpec::Int),
             Expr::LitFlt { .. } => Ok(TypeSpec::Float),
@@ -898,7 +1009,10 @@ impl Checker {
                 )?))
             }
             Expr::Ident(ident) => Ok(self.scope.lookup_var(&ident.name)),
-            Expr::Import { .. } => todo!("type checking of imported files"),
+            Expr::Import { .. } => {
+                // TODO: type checking of imported files
+                Ok(TypeSpec::map_of(TypeSpec::Any))
+            }
             Expr::LitObj { fields, .. } => {
                 let mut type_fields = BTreeMap::<String, TypeSpec>::new();
                 let mut field_types = Vec::<TypeSpec>::new();
@@ -912,7 +1026,10 @@ impl Checker {
                                 .insert(name.clone(), field_type)
                                 .is_some()
                             {
-                                return Err(()); // TODO
+                                // TODO
+                                return Err(E::from(format!(
+                                    "TODO: cannot object (as a verb)",
+                                )));
                             }
                         } else {
                             can_obj = false
@@ -925,7 +1042,23 @@ impl Checker {
                     Ok(TypeSpec::map_of(TypeSpec::coalesce(field_types)))
                 }
             }
-            _ => Err(()),
+            Expr::Binary {
+                lhs, rhs, op_typ, ..
+            } => {
+                let lhs_spec = self.check_expr(lhs)?;
+                let rhs_spec = self.check_expr(rhs)?;
+                self.check_binary_expr(&lhs_spec, &rhs_spec, *op_typ)
+            }
+            Expr::Unary { expr, op_typ, .. } => {
+                let expr_spec = self.check_expr(expr)?;
+                self.check_unary_expr(&expr_spec, *op_typ)
+            }
+            _ => {
+                return Err(E::from(format!(
+                    "unimplemented expression type: {:?}",
+                    expr
+                )))
+            }
         }
     }
 
