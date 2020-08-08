@@ -83,16 +83,7 @@ impl Code {
                 next_char_change_line = true;
             }
         }
-        let pwd = std::env::current_dir().unwrap();
-        println!("{}", pwd.to_string_lossy());
-        format!(
-            "{}:{}:{}",
-            pathdiff::diff_paths(self.path.as_ref(), pwd)
-                .unwrap_or(std::path::PathBuf::from("-"))
-                .to_string_lossy(),
-            line,
-            line_offset
-        )
+        format!("{}:{}:{}", self.path.as_ref(), line, line_offset)
     }
 }
 

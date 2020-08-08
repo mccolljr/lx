@@ -3,6 +3,5 @@ source: src/tests/test_vm/mod.rs
 expression: output
 input_file: src/tests/test_vm/scripts_error/assign_to_int_literal_error.lx
 ---
-ERROR! /Users/jmccollum/rust/lx
-unable to assign to 1 at src/tests/test_vm/scripts_error/assign_to_int_literal_error.lx:1:1
+ERROR! unable to assign to 1 at src/tests/test_vm/scripts_error/assign_to_int_literal_error.lx:1:1
 

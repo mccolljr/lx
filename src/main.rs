@@ -8,6 +8,7 @@
 
 extern crate bincode;
 extern crate itertools;
+extern crate path_clean;
 extern crate pathdiff;
 extern crate quick_error;
 extern crate regex;

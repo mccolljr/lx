@@ -104,6 +104,7 @@ pub enum Expr {
         kwimport: Pos,
         oparen:   Pos,
         name:     String,
+        path:     String,
         cparen:   Pos,
     },
     Typeof {

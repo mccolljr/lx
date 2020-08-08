@@ -3,6 +3,5 @@ source: src/tests/test_vm/mod.rs
 expression: output
 input_file: src/tests/test_vm/scripts_error/unterminated_comment_error.lx
 ---
-ERROR! /Users/jmccollum/rust/lx
-unterminated block comment at src/tests/test_vm/scripts_error/unterminated_comment_error.lx:1:1
+ERROR! unterminated block comment at src/tests/test_vm/scripts_error/unterminated_comment_error.lx:1:1
 

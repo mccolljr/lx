@@ -68,7 +68,7 @@ impl VM {
 
     fn run(&self) -> Result<(), Error> {
         match self.state.run_frame(Frame::new(
-            self.state.program.main()?,
+            self.state.program.main(),
             Rc::new(Scope::new(Some(Rc::clone(&self.state.globals)))),
             0,
         )) {
@@ -115,7 +115,7 @@ impl VMState {
         }
         let import_scope = Rc::new(Scope::extend(Rc::clone(&self.globals)));
         match self.run_frame(Frame::new(
-            self.program.file(path.clone())?,
+            self.program.file(path.clone()),
             Rc::clone(&import_scope),
             0,
         )) {

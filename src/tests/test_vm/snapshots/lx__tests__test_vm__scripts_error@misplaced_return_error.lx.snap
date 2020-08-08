@@ -3,6 +3,5 @@ source: src/tests/test_vm/mod.rs
 expression: output
 input_file: src/tests/test_vm/scripts_error/misplaced_return_error.lx
 ---
-ERROR! /Users/jmccollum/rust/lx
-return not allowed outside of function at src/tests/test_vm/scripts_error/misplaced_return_error.lx:2:1
+ERROR! return not allowed outside of function at src/tests/test_vm/scripts_error/misplaced_return_error.lx:2:1
 

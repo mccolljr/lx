@@ -1,0 +1,5 @@
+import('../lx/src/tests/test_vm/scripts_success/fib.lx');
+
+fn greet(name: str) {
+    print("Hello,", name);
+}

@@ -40,7 +40,7 @@ pub struct Parser<'this> {
     scope:       Rc<Scope>,
     func_depth:  usize,
     loop_depth:  usize,
-    import:      &'this mut dyn FnMut(String) -> Result<(), SyntaxError>,
+    import:      &'this mut dyn FnMut(&str) -> Result<String, SyntaxError>,
 }
 
 impl<'this> Parser<'this> {
@@ -48,7 +48,7 @@ impl<'this> Parser<'this> {
         path: String,
         src: &Code,
         global: Option<Rc<Scope>>,
-        import: &'this mut dyn FnMut(String) -> Result<(), SyntaxError>,
+        import: &'this mut dyn FnMut(&str) -> Result<String, SyntaxError>,
     ) -> Result<File, SyntaxError> {
         let mut p = Parser::new(src, true, global, import);
         p.advance()?;
@@ -64,7 +64,7 @@ impl<'this> Parser<'this> {
         src: &Code,
         track_scope: bool,
         global: Option<Rc<Scope>>,
-        import: &'this mut dyn FnMut(String) -> Result<(), SyntaxError>,
+        import: &'this mut dyn FnMut(&str) -> Result<String, SyntaxError>,
     ) -> Self {
         Parser {
             lex: Lexer::new(src),
@@ -692,12 +692,13 @@ impl<'this> Parser<'this> {
                 let kwimport = self.cur_t.pos;
                 let oparen = self.expect(TokenType::OParen)?.pos;
                 let name = self.expect(TokenType::LitString)?.lit;
+                let path = (self.import)(name.as_ref())?;
                 let cparen = self.expect(TokenType::CParen)?.pos;
-                (self.import)(name.clone())?;
                 Expr::Import {
                     kwimport,
                     oparen,
                     name,
+                    path,
                     cparen,
                 }
             }
@@ -1100,15 +1101,14 @@ impl<'this> Parser<'this> {
 
 #[cfg(test)]
 mod test {
-    use crate::{
-        ast::{
-            Expr,
-            Ident,
-            ObjTypeField,
-            Type,
-        },
-        token::TokenType,
+    use crate::ast::{
+        Expr,
+        Ident,
+        ObjTypeField,
+        Type,
     };
+    use crate::error::SyntaxError;
+    use crate::token::TokenType;
 
     macro_rules! pos {
         ($start:expr, $len:expr) => {
@@ -1147,7 +1147,10 @@ mod test {
     macro_rules! assert_expr {
         ($src:expr, $want:expr) => {{
             let src = crate::source::Code::new("-", $src);
-            let mut import = Box::from(|_| Ok(()));
+            let mut import =
+                Box::from(|_: &str| -> Result<String, SyntaxError> {
+                    Ok("".into())
+                });
             let mut parser =
                 crate::parser::Parser::new(&src, false, None, import.as_mut());
             parser.advance().expect("failed to parse first token");
@@ -1159,7 +1162,10 @@ mod test {
     macro_rules! assert_type {
         ($src:expr, $want:expr) => {{
             let src = crate::source::Code::new("-", $src);
-            let mut import = Box::from(|_| Ok(()));
+            let mut import =
+                Box::from(|_: &str| -> Result<String, SyntaxError> {
+                    Ok("".into())
+                });
             let mut parser =
                 crate::parser::Parser::new(&src, false, None, import.as_mut());
             parser.advance().expect("failed to parse first token");
@@ -1171,7 +1177,10 @@ mod test {
     macro_rules! assert_expr_str {
         ($src:expr, $want:expr) => {{
             let src = crate::source::Code::new("-", $src);
-            let mut import = Box::from(|_| Ok(()));
+            let mut import =
+                Box::from(|_: &str| -> Result<String, SyntaxError> {
+                    Ok("".into())
+                });
             let mut parser =
                 crate::parser::Parser::new(&src, false, None, import.as_mut());
             parser.advance().expect("failed to parse first token");
@@ -1180,7 +1189,10 @@ mod test {
         }};
         ($src:expr; ERROR) => {{
             let src = crate::source::Code::new("-", $src);
-            let mut import = Box::from(|_| Ok(()));
+            let mut import =
+                Box::from(|_: &str| -> Result<String, SyntaxError> {
+                    Ok("".into())
+                });
             let mut parser =
                 crate::parser::Parser::new(&src, false, import.as_mut());
             assert!(parser.parse_expr(0).is_err());

@@ -1,13 +1,6 @@
 fn main() {
-    if true {
-        while true {
-            for _ in range(0,10) {
-                print("Hello, World");
-                break;
-            }
-            break;
-        }
-    }
+    let { greet } = import("./other.lx");
+    greet("Jake");
 }
 
 main();

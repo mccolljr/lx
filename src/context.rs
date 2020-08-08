@@ -1,3 +1,6 @@
+use bincode;
+use path_clean::PathClean;
+use pathdiff;
 use serde::{
     Deserialize,
     Serialize,
@@ -14,19 +17,18 @@ use crate::runtime::inst::Inst;
 use crate::source::Code;
 
 use std::collections::HashMap;
-use std::collections::HashSet;
-use std::fs::{
-    canonicalize,
-    read_to_string,
+use std::fs::read_to_string;
+use std::path::{
+    Path,
+    PathBuf,
 };
-use std::path::PathBuf;
 use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct Context {
     global:    Rc<Scope>,
     files:     HashMap<String, File>,
-    importing: HashSet<String>,
+    importing: Vec<String>,
 }
 
 impl Context {
@@ -34,29 +36,57 @@ impl Context {
         Context {
             global:    Scope::global(globals),
             files:     HashMap::new(),
-            importing: HashSet::new(),
+            importing: Vec::new(),
         }
     }
 
-    fn import(&mut self, path: String) -> Result<(), SyntaxError> {
+    fn resolve(&mut self, path: impl AsRef<Path>) -> Option<PathBuf> {
+        let import_path = path.as_ref();
+        let working_dir = std::env::current_dir()
+            .expect("PANIC: unable to access working directory");
+        let current_path = self
+            .importing
+            .last()
+            .map_or(working_dir.as_ref(), |v| Path::new(v).parent().unwrap());
+        let resolved_path =
+            working_dir.join(current_path).join(import_path).clean();
+        return pathdiff::diff_paths(resolved_path, working_dir);
+    }
+
+    fn import(&mut self, path: &str) -> Result<String, SyntaxError> {
         // get the string of the full path
-        let full_path = abs_path(path.as_ref())
-            .map_err(|_| SyntaxError::FileNotFound { path: path.clone() })?;
+        let full_path = self
+            .resolve(path)
+            .map_or(
+                Err(SyntaxError::FileNotFound { path: path.into() }),
+                |v| Ok(v),
+            )?
+            .to_string_lossy()
+            .to_string();
 
         // disallow circular import chains
         if self.importing.contains(&full_path) {
-            return Err(SyntaxError::CircularImport { path: full_path });
+            return Err(SyntaxError::CircularImport {
+                path: format!(
+                    "{} -> {}",
+                    self.importing.join(" -> "),
+                    full_path
+                ),
+            });
         }
 
         // don't re-import a file we've already imported
         if self.files.contains_key(&full_path) {
-            return Ok(());
+            return Ok(full_path);
         }
 
         // mark that we're currently importing this file
-        self.importing.insert(full_path.clone());
-        let src = read_to_string(&full_path)
-            .map_err(|_| SyntaxError::FileNotFound { path })?;
+        self.importing.push(full_path.clone());
+        let src = read_to_string(&full_path).map_err(|_| {
+            SyntaxError::FileNotFound {
+                path: full_path.clone(),
+            }
+        })?;
 
         // add the file to our list of imports
         let file = Parser::parse_file(
@@ -69,26 +99,38 @@ impl Context {
 
         // mark that we're done importing the file,
         // and return
-        self.importing.remove(&full_path);
-        return Ok(());
+        self.importing.pop().expect("PANIC: bad import stack");
+        return Ok(full_path);
     }
 
     pub fn compile(
         main_file: &str,
         globals: Vec<String>,
     ) -> Result<Program, SyntaxError> {
+        // let start = std::time::Instant::now();
         // get the string of the full path
-        let full_path = abs_path(main_file)?;
         let mut ctx = Context::new(globals);
-        ctx.import(full_path.clone())?;
+        let full_path = ctx.import(main_file)?;
         let mut compiled = HashMap::<String, Rc<[Inst]>>::new();
         for (name, file) in ctx.files {
             compiled.insert(name, Rc::from(compile(file.stmts).unwrap()));
         }
-        return Ok(Program {
-            files: compiled,
-            main:  full_path,
-        });
+        // round trip the program for now so we know our encoding works
+        let program: Program = bincode::deserialize(
+            &bincode::serialize(&Program {
+                files: compiled,
+                main:  full_path,
+            })
+            .expect("unable to serialize bytecode"),
+        )
+        .expect("unable to deserialize bytecode");
+        // let done = std::time::Instant::now();
+        // println!(
+        //     "compiled {:?} in {:?}",
+        //     program.files.keys().collect::<Vec<&String>>(),
+        //     done - start
+        // );
+        return Ok(program);
     }
 }
 
@@ -99,40 +141,9 @@ pub struct Program {
 }
 
 impl Program {
-    pub fn main(&self) -> Result<Rc<[Inst]>, SyntaxError> {
-        self.file(self.main.clone())
+    pub fn main(&self) -> Rc<[Inst]> { self.file(self.main.clone()) }
+
+    pub fn file(&self, name: String) -> Rc<[Inst]> {
+        Rc::clone(self.files.get(&name).expect("FATAL: bad compilation"))
     }
-
-    pub fn file(&self, abs_or_rel: String) -> Result<Rc<[Inst]>, SyntaxError> {
-        // get the string of the full path
-        let full_path = abs_path(abs_or_rel.as_ref())?;
-        match self.files.get(&full_path) {
-            Some(insts) => Ok(Rc::clone(insts)),
-            None => {
-                Err(SyntaxError::FileNotFound {
-                    path: full_path.into(),
-                })
-            }
-        }
-    }
-}
-
-fn abs_path(abs_or_rel: &str) -> Result<String, SyntaxError> {
-    // get absolute path of file to import
-    let abs_pathbuf =
-        canonicalize(PathBuf::from(abs_or_rel)).map_err(|_| {
-            SyntaxError::FileNotFound {
-                path: abs_or_rel.into(),
-            }
-        })?;
-
-    // we don't import directories (yet)
-    if abs_pathbuf.is_dir() {
-        return Err(SyntaxError::FileNotFound {
-            path: abs_or_rel.into(),
-        });
-    }
-
-    // get the string of the full path
-    return Ok(abs_pathbuf.to_string_lossy().to_string());
 }

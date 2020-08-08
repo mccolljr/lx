@@ -254,8 +254,8 @@ fn compile_expr(insts: &mut Vec<Inst>, expr: Expr) {
             insts.push(Inst::StackPushStr(selector.name));
             insts.push(Inst::OperationIndexGet);
         }
-        Expr::Import { name, .. } => {
-            insts.push(Inst::SysImport(name));
+        Expr::Import { path, .. } => {
+            insts.push(Inst::SysImport(path));
         }
         Expr::Typeof { expr, .. } => {
             compile_expr(insts, *expr);
