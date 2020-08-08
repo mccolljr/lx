@@ -898,7 +898,7 @@ impl Checker {
                 )?))
             }
             Expr::Ident(ident) => Ok(self.scope.lookup_var(&ident.name)),
-            Expr::Import { .. } => unimplemented!(),
+            Expr::Import { .. } => todo!("type checking of imported files"),
             Expr::LitObj { fields, .. } => {
                 let mut type_fields = BTreeMap::<String, TypeSpec>::new();
                 let mut field_types = Vec::<TypeSpec>::new();

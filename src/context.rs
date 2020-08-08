@@ -57,10 +57,7 @@ impl Context {
         // get the string of the full path
         let full_path = self
             .resolve(path)
-            .map_or(
-                Err(SyntaxError::FileNotFound { path: path.into() }),
-                |v| Ok(v),
-            )?
+            .ok_or(SyntaxError::UnresolvedImport { path: path.into() })?
             .to_string_lossy()
             .to_string();
 
@@ -83,7 +80,7 @@ impl Context {
         // mark that we're currently importing this file
         self.importing.push(full_path.clone());
         let src = read_to_string(&full_path).map_err(|_| {
-            SyntaxError::FileNotFound {
+            SyntaxError::UnresolvedImport {
                 path: full_path.clone(),
             }
         })?;

@@ -45,8 +45,8 @@ quick_error! {
         UnterminatedBlockComment{code: Code, at: Pos} {
             display("unterminated block comment at {}", code.describe(*at))
         }
-        FileNotFound{path: String} {
-            display("file not found: {}", path)
+        UnresolvedImport{path: String} {
+            display("unresolved import: {}", path)
         }
         CircularImport{path: String} {
             display("circular import: {}", path)

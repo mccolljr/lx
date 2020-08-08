@@ -1,0 +1,7 @@
+---
+source: src/tests/test_vm/mod.rs
+expression: output
+input_file: src/tests/test_vm/scripts_error/unresolved_import_error.lx
+---
+ERROR! unresolved import: src/tests/test_vm/scripts_error/file/that/does/not/exist.lx
+
