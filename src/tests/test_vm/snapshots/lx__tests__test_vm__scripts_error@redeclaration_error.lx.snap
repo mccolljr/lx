@@ -3,5 +3,5 @@ source: src/tests/test_vm/mod.rs
 expression: output
 input_file: src/tests/test_vm/scripts_error/redeclaration_error.lx
 ---
-ERROR! redeclaration of 'a' at src/tests/test_vm/scripts_error/redeclaration_error.lx:2:5 (original declaration is at src/tests/test_vm/scripts_error/redeclaration_error.lx:1:5)
+ERROR! src/tests/test_vm/scripts_error/redeclaration_error.lx:2:5: redeclaration of 'a' (original declaration is at src/tests/test_vm/scripts_error/redeclaration_error.lx:1:5)
 

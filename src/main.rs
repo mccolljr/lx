@@ -15,6 +15,7 @@ extern crate regex;
 extern crate serde;
 
 mod ast;
+mod check;
 mod compiler;
 mod context;
 mod error;
@@ -24,7 +25,7 @@ mod parser;
 mod runtime;
 mod source;
 mod token;
-mod typecheck;
+mod typing;
 
 #[cfg(test)]
 mod tests;

@@ -10,12 +10,12 @@ use crate::ast::{
     File,
     Scope,
 };
+use crate::check::Checker;
 use crate::compiler::compile;
 use crate::error::SyntaxError;
 use crate::parser::Parser;
 use crate::runtime::inst::Inst;
 use crate::source::Code;
-use crate::typecheck::Checker;
 
 use std::collections::HashMap;
 use std::fs::read_to_string;
@@ -110,8 +110,13 @@ impl Context {
         let mut ctx = Context::new(globals);
         let full_path = ctx.import(main_file)?;
 
-        Checker::check_file(ctx.files.get(&full_path).unwrap())
-            .expect("type check failed");
+        match Checker::check_file(ctx.files.get(&full_path).unwrap()) {
+            Err(e) => {
+                println!("ERROR!: {}", e);
+                panic!();
+            }
+            Ok(_) => {}
+        }
 
         let mut compiled = HashMap::<String, Rc<[Inst]>>::new();
         for (name, file) in ctx.files {

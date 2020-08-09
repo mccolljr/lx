@@ -12,6 +12,7 @@ use crate::runtime::value::{
     NativeFunc,
     Value,
 };
+use crate::typing::Typing;
 
 use std::collections::HashMap;
 use std::convert::TryFrom;
@@ -153,6 +154,62 @@ pub fn builtins() -> HashMap<String, Value> {
     declare_builtin!(h, len);
     declare_builtin!(h, format);
     declare_builtin!(h, generate);
+    h
+}
+
+pub fn builtins_types() -> HashMap<String, Typing> {
+    let mut h = HashMap::new();
+    h.insert(
+        "print".to_string(),
+        Typing::Func(vec![Typing::Any], true, Box::new(Typing::Null)),
+    );
+    h.insert(
+        "printf".to_string(),
+        Typing::Func(
+            vec![Typing::Str, Typing::Any],
+            true,
+            Box::new(Typing::Null),
+        ),
+    );
+    h.insert(
+        "range".to_string(),
+        Typing::Func(
+            vec![
+                Typing::union_of(vec![Typing::Int, Typing::Float]),
+                Typing::union_of(vec![Typing::Int, Typing::Float]),
+            ],
+            false,
+            Box::new(Typing::Any),
+        ),
+    );
+    h.insert(
+        "len".to_string(),
+        Typing::Func(
+            vec![Typing::union_of(vec![
+                Typing::Str,
+                Typing::array_of(Typing::Any),
+                Typing::map_of(Typing::Any),
+            ])],
+            false,
+            Box::new(Typing::Any),
+        ),
+    );
+    h.insert(
+        "format".to_string(),
+        Typing::Func(
+            vec![Typing::Str, Typing::Any],
+            true,
+            Box::new(Typing::Str),
+        ),
+    );
+    h.insert(
+        "generate".to_string(),
+        Typing::Func(
+            vec![Typing::Func(vec![], false, Box::new(Typing::Any))],
+            true,
+            Box::new(Typing::Any),
+        ),
+    );
     h
 }
 

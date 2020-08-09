@@ -55,6 +55,7 @@ impl<'this> Parser<'this> {
         let stmts = p.parse_stmt_list(&[TokenType::EOF])?;
         return Ok(File {
             path,
+            src: src.clone(),
             stmts,
             scope: p.scope.clone(),
         });

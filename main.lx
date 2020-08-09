@@ -1,4 +1,6 @@
-let x: int = 12;
-let y: str = "xyz";
-let z = x+y;
-let q: float = z;
+fn add(x: int, y: int): int {
+    return x+y;
+}
+
+let x: int = add(1,2);
+printf("{}", x);

@@ -3,5 +3,5 @@ source: src/tests/test_vm/mod.rs
 expression: output
 input_file: src/tests/test_vm/scripts_error/undeclared_error.lx
 ---
-ERROR! use of undeclared variable 'undeclared_var' at src/tests/test_vm/scripts_error/undeclared_error.lx:1:7
+ERROR! src/tests/test_vm/scripts_error/undeclared_error.lx:1:7: use of undeclared variable 'undeclared_var'
 
