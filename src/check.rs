@@ -322,30 +322,38 @@ impl Checker {
                 return self.check_fn_decl(name, args, ret_typ, body);
             }
             Stmt::Assignment { target, rhs, .. } => {
-                let target_typespec = match target {
-                    AssignTarget::Ident(ident) => {
-                        self.scope.lookup_var(&ident.name)
-                    }
-                    AssignTarget::Index(target, elt) => {
-                        let target_typespec =
-                            self.check_expr(target.as_ref())?;
-                        let index_typespec = self.check_expr(elt.as_ref())?;
-                        self.check_index_expr(
-                            &target_typespec,
-                            &index_typespec,
-                        )?
-                    }
-                    AssignTarget::Select(target, key) => {
-                        let target_typespec =
-                            self.check_expr(target.as_ref())?;
-                        self.check_selector_expr(
-                            &target_typespec,
-                            key.name.clone(),
-                        )?
-                    }
-                };
                 let rhs_typespec = self.check_expr(rhs.as_ref())?;
-                self.check_assign(&rhs_typespec, &target_typespec)
+                match target {
+                    AssignTarget::Ident(ident) => {
+                        let target_typespec =
+                            self.scope.lookup_var(&ident.name);
+                        self.check_assign(&rhs_typespec, &target_typespec)?;
+                        self.scope.declare_var(
+                            ident.name.clone(),
+                            rhs_typespec.clone(),
+                        );
+                        Ok(())
+                    }
+                    AssignTarget::Index(collection, elt) => {
+                        let collection_typespec =
+                            self.check_expr(collection.as_ref())?;
+                        let index_typespec = self.check_expr(elt.as_ref())?;
+                        let target_typespec = self.check_index_expr(
+                            &collection_typespec,
+                            &index_typespec,
+                        )?;
+                        self.check_assign(&rhs_typespec, &target_typespec)
+                    }
+                    AssignTarget::Select(object, key) => {
+                        let object_typespec =
+                            self.check_expr(object.as_ref())?;
+                        let target_typespec = self.check_selector_expr(
+                            &object_typespec,
+                            key.name.clone(),
+                        )?;
+                        self.check_assign(&rhs_typespec, &target_typespec)
+                    }
+                }
             }
             Stmt::If { head, tail } => {
                 for if_block in head {
@@ -731,6 +739,17 @@ impl Checker {
             Expr::Selector { expr, selector, .. } => {
                 let expr_typespec = self.check_expr(expr.as_ref())?;
                 self.check_selector_expr(&expr_typespec, selector.name.clone())
+            }
+            Expr::As { expr, t, .. } => {
+                let expr_typespec = self.check_expr(expr.as_ref())?;
+                let as_typespec = self.from_ast(t);
+                if self.check_assign(&as_typespec, &expr_typespec).is_err() {
+                    return Err(TypeError::InvalidAsRefinement(
+                        expr_typespec,
+                        as_typespec,
+                    ));
+                }
+                return Ok(as_typespec);
             }
             Expr::Call { expr, args, .. } => {
                 let expr_typespec = self.check_expr(expr.as_ref())?;

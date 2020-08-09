@@ -99,6 +99,9 @@ quick_error! {
         InvalidIteration(target: Typing) {
             display("cannot iterate over {}", target)
         }
+        InvalidAsRefinement(target: Typing, astype: Typing) {
+            display("cannot treat {} as {}", target, astype)
+        }
         Other(s: &'static str) {
             display("{}", s)
         }

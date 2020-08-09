@@ -96,6 +96,7 @@ pub enum TokenType {
     KwMap,
     KwArray,
     KwType,
+    KwAs,
 
     Comment,
 }
@@ -162,6 +163,7 @@ impl Display for TokenType {
             KwMap => write!(f, "map"),
             KwArray => write!(f, "array"),
             KwType => write!(f, "type"),
+            KwAs => write!(f, "as"),
             Comment => write!(f, "comment"),
         }
     }
@@ -178,6 +180,7 @@ impl TokenType {
             OpAdd | OpSub               => Some((49, 50)),
             OpDiv | OpRem               => Some((59, 60)),
             OpMul                       => Some((69, 70)),
+            KwAs                        => Some((79, 80)),
             _ => None,
         };
     }
@@ -187,7 +190,7 @@ impl TokenType {
         #[rustfmt::skip]
         return match self {
             KwTypeof      => Some(((), 31)),
-            OpSub | Bang  => Some(((), 71)),
+            OpSub | Bang  => Some(((), 81)),
             _ => None,
         };
     }

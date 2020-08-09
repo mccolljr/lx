@@ -235,6 +235,12 @@ impl Node for Expr {
                 let end = endpos.offset + endpos.length;
                 Pos::span(start, end - start)
             }
+            Expr::As { expr, t, .. } => {
+                let start = expr.pos().offset;
+                let endpos = t.pos();
+                let end = endpos.offset + endpos.length;
+                Pos::span(start, end - start)
+            }
         }
     }
 }

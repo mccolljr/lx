@@ -261,6 +261,9 @@ fn compile_expr(insts: &mut Vec<Inst>, expr: Expr) {
             compile_expr(insts, *expr);
             insts.push(Inst::SysTypeof);
         }
+        Expr::As { expr, .. } => {
+            compile_expr(insts, *expr);
+        }
     }
 }
 

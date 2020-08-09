@@ -288,6 +288,7 @@ impl Lexer {
                 "map" => KwMap,
                 "array" => KwArray,
                 "type" => KwType,
+                "as" => KwAs,
                 _ => Ident,
             },
             lit,

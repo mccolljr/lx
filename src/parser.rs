@@ -672,6 +672,14 @@ impl<'this> Parser<'this> {
                 TokenType::Question => {
                     x = self.parse_ternary(x)?;
                 }
+                TokenType::KwAs => {
+                    self.advance()?;
+                    x = Expr::As {
+                        expr: Box::from(x),
+                        kwas: self.cur_t.pos,
+                        t:    self.parse_type()?,
+                    }
+                }
                 _ => {
                     self.advance()?;
                     x = Expr::Binary {

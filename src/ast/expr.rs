@@ -7,6 +7,7 @@ use super::structs::{
     ObjLitField,
     TypeAnnotation,
 };
+use super::types::Type;
 
 use crate::source::Pos;
 use crate::token::TokenType;
@@ -111,6 +112,11 @@ pub enum Expr {
         kwtypeof: Pos,
         expr:     Box<Expr>,
     },
+    As {
+        expr: Box<Expr>,
+        kwas: Pos,
+        t:    Type,
+    },
 }
 
 impl Display for Expr {
@@ -205,6 +211,9 @@ impl Display for Expr {
             }
             Expr::Typeof { expr, .. } => {
                 write!(f, "(typeof {})", expr)?;
+            }
+            Expr::As { expr, t, .. } => {
+                write!(f, "({} as {})", expr, t)?;
             }
         }
         Ok(())
