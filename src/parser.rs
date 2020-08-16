@@ -1039,9 +1039,9 @@ impl<'this> Parser<'this> {
             _ => {
                 return Err(SyntaxError::Expected {
                     code:   self.lex.src.clone(),
-                    at:     self.cur_t.pos,
+                    at:     self.peek_t.pos,
                     wanted: "type".into(),
-                    found:  format!("{}", self.cur_t.typ),
+                    found:  format!("{}", self.peek_t.typ),
                 })
             }
         }

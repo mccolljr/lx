@@ -1,17 +1,2 @@
-let fib = (fn(): fn(int): int {
-    let cache: map[int] = {(0): 0, (1): 1};
-    fn _fib (n: int): int {
-        let result = cache[n];
-        if typeof result == 'null' {
-            let calculated = _fib(n-1) + _fib(n-2);
-            cache[n] = calculated;
-            return calculated;
-        }
-        return (result as int);
-    }
-    return _fib;
-}());
-
-
-
-print(fib(10));
+let f: str = 'b';
+printf("{}", f);
